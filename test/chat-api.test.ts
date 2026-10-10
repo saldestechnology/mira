@@ -425,6 +425,7 @@ describe('chat over the API', { timeout: 60_000 }, () => {
       { max: 60, call: (who: Account) => h.api(who.cookie, 'GET', `/api/chat/board/${board}`) },
       { max: 60, call: (who: Account) => h.api(who.cookie, 'GET', '/api/chat/unread') },
       { max: 60, call: (who: Account) => h.api(who.cookie, 'PUT', `/api/chat/board/${board}/read`, { lastId: 0 }) },
+      { max: 120, call: (who: Account) => h.api(who.cookie, 'GET', `/api/chat/board/${board}/messages`) },
     ];
     for (const { max, call } of reads) {
       const ana = await person('commenter');
@@ -444,17 +445,25 @@ describe('chat over the API', { timeout: 60_000 }, () => {
   });
 });
 
-describe('without chat', { timeout: 60_000 }, () => {
-  const off = createHarness({ accounts: true });
+describe('chat by default, and without it', { timeout: 60_000 }, () => {
+  const off = createHarness({ accounts: true, settings: { CHAT: 'off' } });
+  const on = createHarness({ accounts: true });
   const open = createHarness({ accounts: false, settings: { CHAT: 'on' } });
   beforeAll(async () => {
-    await Promise.all([off.start(), open.start()]);
+    await Promise.all([off.start(), on.start(), open.start()]);
   });
   afterAll(async () => {
-    await Promise.all([off.cleanup(), open.cleanup()]);
+    await Promise.all([off.cleanup(), on.cleanup(), open.cleanup()]);
   });
 
-  it('has no chat routes in accounts mode without TABULA_CHAT=on', async () => {
+  it('is on in accounts mode with no setting at all', async () => {
+    const who = await on.signInOwner();
+    expect((await on.api(who.cookie, 'GET', '/api/me')).body.chat).toBe(true);
+    expect((await on.api(who.cookie, 'GET', '/api/chat/unread')).status).toBe(200);
+    expect((await on.api(who.cookie, 'GET', '/api/admin/chat')).status).toBe(200);
+  });
+
+  it('has no chat routes in accounts mode with TABULA_CHAT=off', async () => {
     const who = await off.signInOwner();
     expect((await off.api(who.cookie, 'GET', '/api/me')).body.chat).toBeUndefined();
     expect((await off.api(who.cookie, 'GET', '/api/chat/unread')).status).toBe(404);

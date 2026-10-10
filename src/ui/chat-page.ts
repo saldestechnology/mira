@@ -145,7 +145,7 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
     panel.hidden = false;
     convLife = new AbortController();
     const chat: BoardChat = openChat(s.kind, s.ref, convLife.signal);
-    const view = mountConversation({ chat, id: `${s.kind}-${s.ref}`, panel, signal: convLife.signal, meId, meName });
+    const view = mountConversation({ chat, id: `${s.kind}-${s.ref}`, panel, signal: convLife.signal, meId, meName, workspace: s.kind === 'workspace' });
     view.setOpen(true);
     announce(`${name}, ${s.kind === 'board' ? 'board chat' : s.kind === 'team' ? 'team chat' : 'workspace chat'}`);
     if (opts.focus) {

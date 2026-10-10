@@ -155,7 +155,7 @@ describe('the chat limits', () => {
     expect(limits.post('ana', 'board/b1')).toBe(0);
   });
 
-  it.each<['channelInfo' | 'unread' | 'read', number]>([['channelInfo', 60], ['unread', 60], ['read', 60]])(
+  it.each<['channelInfo' | 'unread' | 'read' | 'history', number]>([['channelInfo', 60], ['unread', 60], ['read', 60], ['history', 120]])(
     'allow %s %i times a minute per person, then ask to wait, each on its own',
     (name, max) => {
       const { c, now } = clock();

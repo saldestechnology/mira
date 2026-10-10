@@ -28,6 +28,10 @@
 .chat-log:focus-visible { outline: 2px solid var(--tray-text); outline-offset: -2px; }
 .chat-older { padding: 8px 16px; color: var(--tray-muted); font-size: 12px; line-height: 16px; }
 .chat-older:empty { display: none; }
+/* An empty workspace channel: a centred block of three short lines in the tray text colours, no picture. */
+.chat-log.has-welcome { display: flex; flex-direction: column; }
+.chat-older.chat-welcome { flex: 1 1 auto; display: grid; align-content: center; justify-items: center; gap: 4px; padding: 32px 24px; color: var(--tray-muted); font-size: 13px; line-height: 18px; text-align: center; }
+.chat-welcome-title { color: var(--tray-text); font-size: 15px; font-weight: 700; line-height: 20px; }
 
 /* date line and the New messages line: labels on a rule */
 .chat-day, .chat-new {

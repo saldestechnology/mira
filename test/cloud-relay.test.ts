@@ -299,7 +299,7 @@ describe('without the cloud variables', () => {
     expect((await c.internal('GET', '/api/internal/usage')).status).toBe(404);
     expect((await c.internal('PUT', '/api/internal/limits', { readOnly: true })).status).toBe(404);
     expect((await c.api(owner.cookie, 'POST', '/api/billing/portal')).status).toBe(404);
-    expect((await c.api(owner.cookie, 'GET', '/api/me')).body).toEqual({ user: owner.user, teams: [], images: true });
+    expect((await c.api(owner.cookie, 'GET', '/api/me')).body).toEqual({ user: owner.user, teams: [], images: true, chat: true });
     expect(seen).toEqual([]);
   });
 

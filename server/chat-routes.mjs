@@ -179,7 +179,9 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
       }];
     }),
 
-    compile('GET', 'chat/:kind/:ref/messages', {}, ({ user, params, query }) => {
+    compile('GET', 'chat/:kind/:ref/messages', {}, ({ res, user, params, query }) => {
+      const wait = limits.history(user.id);
+      if (wait) throw limited(res, wait);
       channelFor(user, params.kind, params.ref);
       const before = query.get('before');
       if (before !== null && before !== '' && !ID_RE.test(before)) throw badRequest('before must be a message id');

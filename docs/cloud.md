@@ -16,6 +16,8 @@ Fly's edge replays hosted requests, but Fly cannot replay request bodies over 1 
 
 Cloud mode is on only when `TABULA_AUTH=on` **and** all three are set.
 
+A hosted workspace runs accounts mode, so it has team chat (docs/chat.md) with no variable: chat is on by default there, `chat.sqlite` is created on first use and is in the backups, and `TABULA_CHAT=off` is the operator's opt-out. A workspace gets it when it moves to an image that has this default.
+
 - None set: nothing changes, the routes below answer `404`.
 - Some but not all set: the relay refuses to start and names the missing variables. A token that is too short, a URL that is not allowed or an id that does not fit refuse startup too.
 - All set with `TABULA_AUTH` off: cloud mode stays off and the relay logs that the variables are ignored. (The values are still validated.)
