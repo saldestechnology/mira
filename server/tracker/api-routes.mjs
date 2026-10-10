@@ -8,6 +8,7 @@ import { isSubscribed, subscribeTicket, unsubscribeTicket } from './subscription
 import { relateTickets } from './relations.mjs';
 import { createMilestone, createProject, listMilestones, listProjects, updateMilestone, updateProject } from './projects.mjs';
 import { createSavedView, deleteSavedView, getSavedView, listSavedViews, updateSavedView } from './views.mjs';
+import { drainTicketProjection } from './projection.mjs';
 
 const ACCESS_CHECK = Object.freeze({ id: 'tracker-access-check' });
 const COMMENT_PAGE = 50;
@@ -212,15 +213,15 @@ function withCurrentTicketOnConflict(directory, actor, key, action) {
   } catch (error) {
     if (error instanceof OpsError && error.code === 'conflict') {
       try {
-        error.ticket = addTicketRowExtras({ directory, tickets: [getTicket({ directory, actor, key })] })[0];
+        error.ticket = addTicketRowExtras({ directory, actor, tickets: [getTicket({ directory, actor, key })] })[0];
       } catch { /* keep the original conflict */ }
     }
     throw error;
   }
 }
 
-function pageWithExtras(directory, tickets) {
-  return addTicketRowExtras({ directory, tickets });
+function pageWithExtras(directory, tickets, actor) {
+  return addTicketRowExtras({ directory, actor, tickets });
 }
 
 function ownerForSession(directory, value, path = 'ownerId') {
@@ -340,9 +341,17 @@ function feedEvents(directory, actor, since) {
 }
 
 /** @param {any} options */
-export function createTrackerRoutes({ directory, compile, audit, cloud = null, now = Date.now } = {}) {
+export function createTrackerRoutes({ directory, compile, audit, cloud = null, now = Date.now, roomAccess = null, baseUrl = 'http://localhost' } = {}) {
   const currentReadOnly = () => cloud?.limits().readOnly === true;
   const routes = [];
+  const projectionPending = (tickets) => {
+    const ids = [...new Set((Array.isArray(tickets) ? tickets : [tickets]).map((ticket) => ticket?.id).filter(Boolean))];
+    let pending = false;
+    for (const ticketId of ids) {
+      pending = drainTicketProjection({ directory, roomAccess, ticketId, baseUrl, now: now() }).projectionPending || pending;
+    }
+    return pending;
+  };
 
   routes.push(compile('GET', 'tracker/meta', { tracker: true }, ({ user }) => {
     const actor = actorFor(user);
@@ -497,7 +506,7 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
       directory, actor, viewId: params.id, limit: positiveLimit(query), cursor: querySingle(query, 'cursor') ?? null, now: now(),
     });
     const view = viewsForApi(directory, actor).find((item) => item.id === params.id) ?? result.view;
-    return [200, { tickets: pageWithExtras(directory, result.tickets), nextCursor: result.nextCursor, view }];
+    return [200, { tickets: pageWithExtras(directory, result.tickets, actor), nextCursor: result.nextCursor, view }];
   }));
 
   routes.push(compile('PATCH', 'tracker/views/:id', { tracker: true, trackerMutation: true, body: true }, ({ user, params, body }) => {
@@ -530,7 +539,7 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
         'SELECT key FROM tickets WHERE updated_seq > ? ORDER BY updated_seq, id LIMIT 201',
       ).all(updatedSince);
       const more = rows.length > 200;
-      const tickets = pageWithExtras(directory, rows.slice(0, 200).map((row) => getTicket({ directory, actor, key: row.key })));
+      const tickets = pageWithExtras(directory, rows.slice(0, 200).map((row) => getTicket({ directory, actor, key: row.key })), actor);
       return [200, { tickets, seq, ...(more ? { more: true } : {}) }];
     }
     const rawQuery = querySingle(query, 'q');
@@ -544,7 +553,7 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
       if (error instanceof OpsError && error.path === 'query') error.path = 'q';
       throw error;
     }
-      return [200, { tickets: pageWithExtras(directory, result.entries), nextCursor: result.next }];
+      return [200, { tickets: pageWithExtras(directory, result.entries, actor), nextCursor: result.next }];
   }));
 
   routes.push(compile('POST', 'tracker/tickets', { tracker: true, trackerMutation: true, body: true }, ({ user, body }) => {
@@ -553,13 +562,14 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
       throw new OpsError('invalid_input', 'Must be 8 to 64 characters', 'idempotencyKey');
     }
     const input = normalizeAssignee(directory, body);
+    const actor = actorFor(user);
     const ticket = directory.transaction(() => {
-      const replay = findTicketByIdempotency({ directory, actor: actorFor(user), idempotencyKey: body.idempotencyKey, source: 'api' });
+      const replay = findTicketByIdempotency({ directory, actor, idempotencyKey: body.idempotencyKey, source: 'api' });
       const created = createTicket({
-        ...input, directory, actor: actorFor(user), source: 'api', readOnly: currentReadOnly, now: now(),
+        ...input, directory, actor, source: 'api', readOnly: currentReadOnly, now: now(),
       });
       if (!replay) audit(user, 'tracker.ticket.create', { ticketId: created.id });
-      return pageWithExtras(directory, [created])[0];
+      return pageWithExtras(directory, [created], actor)[0];
     });
     return [201, { ticket }];
   }));
@@ -567,7 +577,7 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
   routes.push(compile('GET', 'tracker/tickets/:key', { tracker: true }, ({ user, params }) => {
     const actor = actorFor(user);
     const ref = ticketReference(directory, params.key);
-    const ticket = pageWithExtras(directory, [getTicket({ directory, actor, key: ref.key })])[0];
+    const ticket = pageWithExtras(directory, [getTicket({ directory, actor, key: ref.key })], actor)[0];
     const comments = commentPage(directory, ticket.id).items;
     const events = eventPage(directory, ticket.id).items;
     return [200, {
@@ -611,9 +621,9 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
           source: 'api', readOnly: currentReadOnly, now: now(),
         });
         audit(user, 'tracker.ticket.update', { ticketId: updated.id });
-        return pageWithExtras(directory, [updated])[0];
+        return pageWithExtras(directory, [updated], actor)[0];
       }));
-      return [200, { ticket }];
+      return [200, { ticket, ...(projectionPending(ticket) ? { projectionPending: true } : {}) }];
   }));
 
   routes.push(compile('POST', 'tracker/tickets/:key/transition', { tracker: true, trackerMutation: true, body: true }, ({ user, params, body }) => {
@@ -623,9 +633,9 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
     const ticket = withCurrentTicketOnConflict(directory, actor, key, () => directory.transaction(() => {
       const changed = transitionTicket({ directory, actor, key, state: body.state, source: 'api', readOnly: currentReadOnly, now: now() });
       audit(user, 'tracker.ticket.transition', { ticketId: changed.id });
-      return pageWithExtras(directory, [changed])[0];
+      return pageWithExtras(directory, [changed], actor)[0];
     }));
-    return [200, { ticket }];
+    return [200, { ticket, ...(projectionPending(ticket) ? { projectionPending: true } : {}) }];
   }));
 
   routes.push(compile('POST', 'tracker/tickets/:key/comments', { tracker: true, trackerMutation: true, body: true }, ({ user, params, body }) => {
@@ -641,10 +651,10 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
           id: comment.id, author: comment.author, body: comment.body, createdAt: comment.createdAt,
           actorType: comment.actorType, editedAt: null, deletedAt: null,
         }),
-        ticket: pageWithExtras(directory, [ticket])[0],
+        ticket: pageWithExtras(directory, [ticket], actor)[0],
       };
     }));
-    return [201, result];
+    return [201, { ...result, ...(projectionPending(result.ticket) ? { projectionPending: true } : {}) }];
   }));
 
   routes.push(compile('PATCH', 'tracker/tickets/:key/comments/:id', { tracker: true, trackerMutation: true, body: true }, ({ user, params, body }) => {
@@ -661,9 +671,9 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
       return { comment: commentView({
         id: comment.id, author: comment.author, body: comment.body, createdAt: comment.createdAt,
         actorType: comment.actorType, editedAt: comment.editedAt, deletedAt: comment.deletedAt,
-      }), ticket: pageWithExtras(directory, [ticket])[0] };
+      }), ticket: pageWithExtras(directory, [ticket], actor)[0] };
     }));
-    return [200, result];
+    return [200, { ...result, ...(projectionPending(result.ticket) ? { projectionPending: true } : {}) }];
   }));
 
   routes.push(compile('DELETE', 'tracker/tickets/:key/comments/:id', { tracker: true, trackerMutation: true }, ({ user, params }) => {
@@ -678,9 +688,9 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
       return { comment: commentView({
         id: comment.id, author: comment.author, body: comment.body, createdAt: comment.createdAt,
         actorType: comment.actorType, editedAt: comment.editedAt, deletedAt: comment.deletedAt,
-      }), ticket: pageWithExtras(directory, [ticket])[0] };
+      }), ticket: pageWithExtras(directory, [ticket], actor)[0] };
     }));
-    return [200, result];
+    return [200, { ...result, ...(projectionPending(result.ticket) ? { projectionPending: true } : {}) }];
   }));
 
   routes.push(compile('POST', 'tracker/tickets/:key/relations', { tracker: true, trackerMutation: true, body: true }, ({ user, params, body }) => {
@@ -697,7 +707,8 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
       audit(user, 'tracker.ticket.relate', { ticketId: changed.ticket.id });
       return changed;
     }));
-    return [200, { ticket: pageWithExtras(directory, [result.ticket])[0] }];
+    const ticket = pageWithExtras(directory, [result.ticket], actor)[0];
+    return [200, { ticket, ...(projectionPending(ticket) ? { projectionPending: true } : {}) }];
   }));
 
   routes.push(compile('DELETE', 'tracker/tickets/:key/relations', { tracker: true, trackerMutation: true, body: true }, ({ user, params, body, query }) => {
@@ -724,7 +735,8 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
       audit(user, 'tracker.ticket.unrelate', { ticketId: changed.ticket.id });
       return changed;
     }));
-    return [200, { ticket: pageWithExtras(directory, [result.ticket])[0] }];
+    const ticket = pageWithExtras(directory, [result.ticket], actor)[0];
+    return [200, { ticket, ...(projectionPending(ticket) ? { projectionPending: true } : {}) }];
   }));
 
   routes.push(compile('POST', 'tracker/tickets/:key/archive', { tracker: true, trackerMutation: true }, ({ user, params }) => {
@@ -733,9 +745,9 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
     const ticket = withCurrentTicketOnConflict(directory, actor, key, () => directory.transaction(() => {
       const changed = updateTicket({ directory, actor, key, patch: { archived: true }, source: 'api', readOnly: currentReadOnly, now: now() });
       audit(user, 'tracker.ticket.archive', { ticketId: changed.id });
-      return pageWithExtras(directory, [changed])[0];
+      return pageWithExtras(directory, [changed], actor)[0];
     }));
-    return [200, { ticket }];
+    return [200, { ticket, ...(projectionPending(ticket) ? { projectionPending: true } : {}) }];
   }));
 
   routes.push(compile('POST', 'tracker/tickets/:key/restore', { tracker: true, trackerMutation: true }, ({ user, params }) => {
@@ -744,9 +756,9 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
     const ticket = withCurrentTicketOnConflict(directory, actor, key, () => directory.transaction(() => {
       const changed = updateTicket({ directory, actor, key, patch: { archived: false }, source: 'api', readOnly: currentReadOnly, now: now() });
       audit(user, 'tracker.ticket.restore', { ticketId: changed.id });
-      return pageWithExtras(directory, [changed])[0];
+      return pageWithExtras(directory, [changed], actor)[0];
     }));
-    return [200, { ticket }];
+    return [200, { ticket, ...(projectionPending(ticket) ? { projectionPending: true } : {}) }];
   }));
 
   routes.push(compile('POST', 'tracker/tickets/bulk', { tracker: true, trackerMutation: true, body: true }, ({ user, body }) => {
@@ -821,7 +833,7 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
           if (Object.hasOwn(ticketPatch, 'due') && beforeTicket.due !== updated.due) before.due = beforeTicket.due;
           if (Object.hasOwn(ticketPatch, 'archived') && (beforeTicket.archivedAt != null) !== (updated.archivedAt != null)) before.archived = beforeTicket.archivedAt != null;
           if (Object.keys(before).length) audit(user, 'tracker.ticket.bulk', { batchId, ticketId: updated.id });
-          return { ticket: pageWithExtras(directory, [updated])[0], before };
+          return { ticket: pageWithExtras(directory, [updated], actor)[0], before };
         });
         results.push({ key: requestedKey, ok: true, ticket: result.ticket, before: result.before });
       } catch (error) {
@@ -830,13 +842,14 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
         if (error.code === 'conflict') {
           try {
             const { key } = ticketReference(directory, requestedKey);
-            failed.ticket = pageWithExtras(directory, [getTicket({ directory, actor, key })])[0];
+            failed.ticket = pageWithExtras(directory, [getTicket({ directory, actor, key })], actor)[0];
           } catch { /* keep the conflict without exposing a ticket the actor cannot read */ }
         }
         results.push(failed);
       }
     }
-    return [200, { batchId, results }];
+    const pending = projectionPending(results.filter((result) => result.ok).map((result) => result.ticket));
+    return [200, { batchId, results, ...(pending ? { projectionPending: true } : {}) }];
   }));
 
   routes.push(compile('PUT', 'tracker/tickets/:key/subscription', { tracker: true, trackerMutation: true }, ({ user, params }) => {

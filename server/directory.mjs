@@ -422,6 +422,74 @@ export const MIGRATIONS = [
   CREATE INDEX notifications_email_due ON notifications(next_email_at)
     WHERE next_email_at IS NOT NULL AND emailed_at IS NULL AND suppressed_at IS NULL;
   `,
+  // Tracker slice 4: SQL-owned kanban links and the durable SQL-to-Yjs projection outbox. These tables are additive and
+  // deliberately keep the minimum reader at 11 so hosted workspaces can still roll back to v5.0.1 while TABULA_TRACKER is off.
+  { sql: `
+  CREATE TABLE kanban_tracker_links (
+    id TEXT PRIMARY KEY,
+    board_id TEXT NOT NULL,
+    kanban_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL REFERENCES ticket_workflows(id),
+    created_at INTEGER NOT NULL,
+    created_by TEXT,
+    removed_at INTEGER,
+    idempotency_key TEXT,
+    idempotency_result_json TEXT
+  );
+  CREATE UNIQUE INDEX kanban_tracker_links_active ON kanban_tracker_links(board_id, kanban_id)
+    WHERE removed_at IS NULL;
+  CREATE UNIQUE INDEX kanban_tracker_links_idempotency ON kanban_tracker_links(board_id, created_by, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+  CREATE INDEX kanban_tracker_links_board ON kanban_tracker_links(board_id, kanban_id, removed_at);
+
+  CREATE TABLE kanban_state_mappings (
+    kanban_link_id TEXT NOT NULL REFERENCES kanban_tracker_links(id) ON DELETE CASCADE,
+    lane_id TEXT NOT NULL,
+    state_id TEXT NOT NULL REFERENCES ticket_states(id) ON DELETE RESTRICT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (kanban_link_id, lane_id)
+  );
+  CREATE UNIQUE INDEX kanban_state_mappings_state ON kanban_state_mappings(kanban_link_id, state_id);
+  CREATE INDEX kanban_state_mappings_by_state ON kanban_state_mappings(state_id);
+
+  CREATE TABLE ticket_links (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
+    board_id TEXT NOT NULL,
+    kanban_id TEXT NOT NULL,
+    card_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    created_by_type TEXT NOT NULL,
+    created_by_id TEXT,
+    removed_at INTEGER,
+    last_projection_seq INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE UNIQUE INDEX ticket_links_active_card ON ticket_links(board_id, kanban_id, card_id)
+    WHERE removed_at IS NULL;
+  CREATE UNIQUE INDEX ticket_links_active_ticket ON ticket_links(kanban_id, ticket_id)
+    WHERE removed_at IS NULL;
+  CREATE INDEX ticket_links_ticket ON ticket_links(ticket_id, removed_at);
+  CREATE INDEX ticket_links_board ON ticket_links(board_id, kanban_id, removed_at);
+
+  CREATE TABLE ticket_projection_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
+    board_id TEXT NOT NULL,
+    kanban_id TEXT NOT NULL,
+    card_id TEXT NOT NULL,
+    event_seq INTEGER NOT NULL,
+    operation TEXT NOT NULL CHECK (operation IN ('upsert', 'remove')),
+    projection_json TEXT,
+    created_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL,
+    applied_at INTEGER,
+    last_error_code TEXT,
+    UNIQUE (board_id, kanban_id, card_id, event_seq)
+  );
+  CREATE INDEX ticket_projection_outbox_pending ON ticket_projection_outbox(applied_at, next_attempt_at, event_seq, id);
+  `, minReader: 11 },
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');

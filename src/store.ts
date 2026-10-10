@@ -18,7 +18,7 @@ export const COLOR_FIELDS: ReadonlySet<string> = new Set(['fill', 'stroke', 'tex
 /** Boolean flags on an object: a value that is not true or false is not written (TAB-198, TAB-203). */
 const FLAG_FIELDS: ReadonlySet<string> = new Set(['hidden', 'locked', 'flipX', 'flipY']);
 const BOX_FLAG_FIELDS: ReadonlySet<string> = new Set(['flipX', 'flipY']);
-const TRACKER_CARD_PROJECTION_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker']);
+const TRACKER_CARD_PROJECTION_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'trackerUnmappedState']);
 
 export const DEFAULT_META: BoardMeta = {
   name: 'Untitled board',
@@ -402,6 +402,7 @@ export class Store {
       .filter(([k, v]) => v !== undefined
         && !(stored.type === 'card' && TRACKER_CARD_PROJECTION_FIELDS.has(k))
         && k !== 'ext'
+        && k !== 'tracker'
         && (!checked(k) || cleanColor(v) !== null)
         && (!FLAG_FIELDS.has(k) || typeof v === 'boolean')
         && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored))))
@@ -421,7 +422,7 @@ export class Store {
       const currentType = m.get('type');
       const type = (patch as Record<string, unknown>).type ?? currentType;
       if ((currentType === 'card' || type === 'card') && TRACKER_CARD_PROJECTION_FIELDS.has(k)) continue;
-      if (k === 'ext') continue;
+      if (k === 'ext' || k === 'tracker') continue;
       if (group && ['x', 'y', 'w', 'h', 'rotation'].includes(k)) continue;
       if (BOX_FLAG_FIELDS.has(k) && (type === 'connector' || type === 'group')) continue;
       if (type === 'tracker' && k === 'rotation') continue;

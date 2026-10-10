@@ -1,6 +1,7 @@
-// Tests that rewind a directory to an older schema (PRAGMA user_version = n) must also remove what tracker migrations 12, 13
-// and the notifications table added, or replaying the later migrations meets tables and columns that already exist.
+// Tests that rewind a directory to an older schema (PRAGMA user_version = n) must also remove what tracker migrations 12, 13,
+// 14 and 15 added, or replaying the later migrations meets tables and columns that already exist.
 export const REMOVE_TRACKER_MIGRATION = `
+  DROP TABLE IF EXISTS ticket_projection_outbox; DROP TABLE IF EXISTS ticket_links; DROP TABLE IF EXISTS kanban_state_mappings; DROP TABLE IF EXISTS kanban_tracker_links;
   DROP TABLE IF EXISTS notifications; DROP TABLE IF EXISTS saved_views; DROP TABLE IF EXISTS ticket_relations; DROP TABLE IF EXISTS milestones; DROP TABLE IF EXISTS projects;
   DROP TABLE IF EXISTS ticket_search; DROP TABLE IF EXISTS ticket_subscriptions; DROP TABLE IF EXISTS ticket_aliases;
   DROP TABLE IF EXISTS ticket_events; DROP TABLE IF EXISTS ticket_comments; DROP TABLE IF EXISTS ticket_labels;

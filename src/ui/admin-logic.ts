@@ -103,6 +103,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
   'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
   'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
+  'tracker.link.create', 'tracker.link.delete', 'tracker.link.card',
   'tracker.label.create', 'tracker.milestone.create', 'tracker.milestone.update', 'tracker.project.create', 'tracker.project.update', 'tracker.ticket.archive', 'tracker.ticket.bulk', 'tracker.ticket.comment.delete', 'tracker.ticket.comment.edit', 'tracker.ticket.relate', 'tracker.ticket.restore', 'tracker.ticket.unrelate', 'tracker.view.create', 'tracker.view.delete', 'tracker.view.update',
 ] as const;
 
@@ -293,6 +294,12 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return `${who} subscribed to a ticket`;
     case 'tracker.ticket.unsubscribe':
       return `${who} unsubscribed from a ticket`;
+    case 'tracker.link.create':
+      return `${who} linked a kanban to the tracker`;
+    case 'tracker.link.delete':
+      return `${who} unlinked a kanban from the tracker`;
+    case 'tracker.link.card':
+      return `${who} created a ticket from a kanban card`;
     case 'tracker.label.create':
       return `${who} created a ticket label`;
     case 'tracker.milestone.create':

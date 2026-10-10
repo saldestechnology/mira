@@ -44,6 +44,7 @@ import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
 import { clientIpOf } from './client-ip.mjs';
 import { createSourceGate } from './source-policy.mjs';
+import { createTrackerProjectionWorker, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -386,7 +387,7 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, roomAccess: { read: (name, fn) => roomAccess.read(name, fn), write: (name, origin, fn) => roomAccess.write(name, origin, fn) } });
 }
 
 // ---------------------------------------------------------------- rooms
@@ -426,6 +427,7 @@ async function enterMaintenance() {
   chatRetention?.stop();
   chatNotifier?.stop();
   trackerNotifier?.stop();
+  trackerProjectionWorker?.stop();
   closeChat();
   roomsFrozen = true;
   for (const room of rooms.values()) {
@@ -717,6 +719,13 @@ function getRoom(name) {
     rooms.set(name, r);
     log(`room ${name}: loaded`);
     r.nameFromDirectory();
+    if (config.tracker && directory) queueMicrotask(() => {
+      try {
+        retryTrackerProjectionOnRoomLoad({ directory, roomAccess, boardId: name, baseUrl: config.baseUrl });
+      } catch (err) {
+        log(`room ${name}: tracker projection retry failed`, err?.message);
+      }
+    });
   }
   return r;
 }
@@ -752,6 +761,11 @@ const roomAccess = {
     }
   },
 };
+
+const trackerProjectionWorker = config.tracker && directory
+  ? createTrackerProjectionWorker({ directory, roomAccess, baseUrl: config.baseUrl, log })
+  : null;
+trackerProjectionWorker?.start();
 
 // AI features in open mode (docs/ai.md): the operator's key, counted per client address. Accounts mode has the route in api.mjs.
 const openAiRun = config.authEnabled ? null : createOpenRun({ config, canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), roomExists: (name) => roomAccess.exists(name), live: aiLive, log });
@@ -1325,6 +1339,7 @@ async function stopRelay() {
   chatRetention?.stop();
   chatNotifier?.stop();
   trackerNotifier?.stop();
+  trackerProjectionWorker?.stop();
   if (stopping) {
     await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
     // Edits can arrive during either backup wait. Nothing may yield between this final save and exit.

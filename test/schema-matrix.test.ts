@@ -180,3 +180,61 @@ for (const store of stores) {
     });
   });
 }
+
+describe('directory tracker rollback floor', () => {
+  it('keeps schema 15 readable and writable by the v5.0.1 schema 11 reader', () => {
+    expect(MIGRATIONS).toHaveLength(15);
+    expect(MIGRATIONS[14]).toMatchObject({ minReader: 11 });
+    expect(maxReaderOf(MIGRATIONS)).toBe(11);
+    const file = realDatabase(stores[0]);
+    const before = snapshot(file);
+    const oldReader = new DatabaseSync(file);
+    try {
+      const state = migrate(oldReader, MIGRATIONS.slice(0, 11), 'directory v5.0.1');
+      expect(state).toMatchObject({ version: 15, minReader: 11, legacy: false });
+      oldReader.prepare("INSERT INTO users (id, email, name, role, created_at) VALUES ('rollback-user', 'rollback@example.com', 'Rollback', 'member', 1)").run();
+      oldReader.prepare("UPDATE users SET name = 'Rollback reader' WHERE id = 'rollback-user'").run();
+      expect(oldReader.prepare("SELECT name FROM users WHERE id = 'rollback-user'").get()).toEqual({ name: 'Rollback reader' });
+      expect(oldReader.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ticket_projection_outbox'").get()).toBeDefined();
+      oldReader.prepare(
+        `INSERT INTO kanban_tracker_links
+          (id, board_id, kanban_id, workflow_id, created_at, created_by, idempotency_key)
+         VALUES ('rollback-link', 'rollback-board', 'rollback-kanban', 'wf_default', 1, 'rollback-user', 'rollback-key-123')`,
+      ).run();
+      oldReader.prepare(
+        `INSERT INTO kanban_state_mappings (kanban_link_id, lane_id, state_id, created_at, updated_at)
+         VALUES ('rollback-link', 'rollback-lane', 'st_todo', 1, 1)`,
+      ).run();
+      oldReader.prepare(
+        `INSERT INTO tickets
+          (id, prefix, number, key, title, state_id, tracker_id, created_at, updated_at, created_by_type, created_by_id, updated_seq)
+         VALUES ('rollback-ticket', 'TAB', 998, 'TAB-998', 'Rollback ticket', 'st_todo', 'trk_default', 1, 1, 'user', 'rollback-user', 1)`,
+      ).run();
+      oldReader.prepare(
+        `INSERT INTO ticket_links
+          (id, ticket_id, board_id, kanban_id, card_id, created_at, created_by_type, created_by_id)
+         VALUES ('rollback-card-link', 'rollback-ticket', 'rollback-board', 'rollback-kanban', 'rollback-card', 1, 'user', 'rollback-user')`,
+      ).run();
+      oldReader.prepare(
+        `INSERT INTO ticket_links
+          (id, ticket_id, board_id, kanban_id, card_id, created_at, created_by_type, created_by_id)
+         VALUES ('rollback-card-link-other-board', 'rollback-ticket', 'rollback-board-2', 'rollback-kanban-2', 'rollback-card-2', 1, 'user', 'rollback-user')`,
+      ).run();
+      oldReader.prepare(
+        `INSERT INTO ticket_projection_outbox
+          (ticket_id, board_id, kanban_id, card_id, event_seq, operation, projection_json, created_at, next_attempt_at)
+         VALUES ('rollback-ticket', 'rollback-board', 'rollback-kanban', 'rollback-card', 1, 'upsert', '{}', 1, 1)`,
+      ).run();
+      expect(oldReader.prepare('SELECT card_id FROM ticket_projection_outbox WHERE ticket_id = ?').get('rollback-ticket')).toEqual({ card_id: 'rollback-card' });
+    } finally {
+      oldReader.close();
+    }
+    expect(snapshot(file)).not.toEqual(before);
+    const readOnly = new DatabaseSync(file, { readOnly: true });
+    try {
+      expect(readOnly.prepare('PRAGMA user_version').get()).toEqual({ user_version: 15 });
+    } finally {
+      readOnly.close();
+    }
+  });
+});

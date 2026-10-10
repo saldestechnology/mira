@@ -24,6 +24,10 @@ Directory migration 12 adds the nullable `access_tokens.tracker` capability and 
 
 Directory migration 13 adds projects, milestones, ticket relations and saved views with their indexes. It is an additive SQL string annotated `minReader: 11`; it preserves existing ticket rows and leaves the release at directory `schema: 13` and `maxReader: 11`.
 
+Directory migration 14 adds the notification inbox and email outbox. It is an additive SQL string annotated `minReader: 11`; it leaves the release at directory `schema: 14` and `maxReader: 11`.
+
+Directory migration 15 adds linked-kanban mappings, card links and the SQL-to-Yjs projection outbox. It is declared as `{ sql, minReader: 11 }` because a tracker schema rollback to v5.0.1 remains supported while `TABULA_TRACKER` is off in production. The migration has no board foreign keys and no user foreign keys with restrictive delete behavior. It leaves the release at directory `schema: 15` and `maxReader: 11`.
+
 The migration lint runs in `test/migrations-lint.test.ts`. It flags SQL patterns that need review. A plain-string entry with a flagged pattern fails; make it an object and choose `minReader: n` for a breaking change or `minReader: n - 1` after review confirms it is expand-only. The lint is a review aid, so read the migration and consider behavior the patterns may not recognize.
 
 ## Reader generations and legacy databases
