@@ -478,7 +478,8 @@ describe('retention and metrics', () => {
     expect(fake.orderedGets).toEqual([]);
   });
 
-  it('refuses a group-writable pull master and does not reveal its value', async () => {
+  // The puller runs on the Linux host only: Windows reports every file as mode 0666, so there the mode check is skipped by design.
+  it.skipIf(process.platform === 'win32')('refuses a group-writable pull master and does not reveal its value', async () => {
     const { configFile } = await writeMainInputs([workspace], 0o660);
     const lines: string[] = [];
     const code = await runMain({ argv: ['--config', configFile], fetch: async () => response(200, {}), now, log: (line: string) => lines.push(line) });
