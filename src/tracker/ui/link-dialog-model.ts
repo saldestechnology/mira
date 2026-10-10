@@ -17,6 +17,8 @@ export interface LinkDialogModelState {
   errors: LinkDialogErrors;
   /** Why the last submit failed: the store's error code folded to what the dialog shows. */
   errorCode: 'offline' | 'forbidden' | 'conflict' | 'other' | null;
+  /** The createTickets limit response includes actionable server guidance for the general error area. */
+  showServerMessage: boolean;
   submitting: boolean;
   canSubmit: boolean;
 }
@@ -28,6 +30,11 @@ export interface LinkDialogModel {
   describeStateUse(stateKey: string): string | null;
   submit(store: Pick<TrackerStore, 'linkKanban'>, context: { boardId: string; kanbanId: string }): Promise<TrackerLinkKanbanResult | null>;
   subscribe(listener: (state: LinkDialogModelState) => void): () => void;
+}
+
+function newLinkIdempotencyKey(): string {
+  const randomId = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `link-${randomId}`;
 }
 
 export function createLinkDialogModel(input: {
@@ -48,7 +55,10 @@ export function createLinkDialogModel(input: {
   let createTickets = input.existingCardCount > 0;
   let generalError: string | null = null;
   let errorCode: LinkDialogModelState['errorCode'] = null;
+  let showServerMessage = false;
   let submitting = false;
+  let lastSubmissionFingerprint = '';
+  let lastSubmissionKey = '';
   const serverLaneErrors: Record<string, string> = {};
   const listeners = new Set<(state: LinkDialogModelState) => void>();
 
@@ -72,7 +82,7 @@ export function createLinkDialogModel(input: {
     const currentErrors = errors();
     return {
       mapping: { ...mapping }, skippedLanes: skipped(), createTickets,
-      errors: currentErrors, errorCode, submitting, canSubmit: !submitting && canSubmit(currentErrors),
+      errors: currentErrors, errorCode, showServerMessage, submitting, canSubmit: !submitting && canSubmit(currentErrors),
     };
   };
   const notify = () => {
@@ -86,6 +96,7 @@ export function createLinkDialogModel(input: {
       if (!lanesById.has(laneId)) return;
       delete serverLaneErrors[laneId];
       generalError = null;
+      showServerMessage = false;
       if (stateKey === null) {
         mapping[laneId] = null;
       } else if (!statesByKey.has(stateKey)) {
@@ -99,6 +110,7 @@ export function createLinkDialogModel(input: {
     setCreateTickets(value) {
       createTickets = value;
       generalError = null;
+      showServerMessage = false;
       notify();
     },
     describeStateUse(stateKey) {
@@ -110,12 +122,19 @@ export function createLinkDialogModel(input: {
       submitting = true;
       errorCode = null;
       generalError = null;
+      showServerMessage = false;
       notify();
       const map = Object.fromEntries(Object.entries(mapping).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+      const fingerprint = JSON.stringify([context.boardId, context.kanbanId, Object.entries(map).sort(([left], [right]) => left.localeCompare(right)), createTickets]);
+      if (fingerprint !== lastSubmissionFingerprint || !lastSubmissionKey) {
+        lastSubmissionFingerprint = fingerprint;
+        lastSubmissionKey = newLinkIdempotencyKey();
+      }
       try {
-        const result = await store.linkKanban({ ...context, map, createTickets });
+        const result = await store.linkKanban({ ...context, mapping: map, createTickets, idempotencyKey: lastSubmissionKey });
         generalError = null;
         errorCode = null;
+        showServerMessage = false;
         submitting = false;
         for (const laneId of Object.keys(serverLaneErrors)) delete serverLaneErrors[laneId];
         notify();
@@ -124,13 +143,14 @@ export function createLinkDialogModel(input: {
         const error = caught instanceof TrackerError ? caught : caught as { code?: unknown; message?: unknown; path?: unknown };
         const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
         const path = error && typeof error === 'object' && typeof error.path === 'string' ? error.path : '';
-        const laneId = path.startsWith('map.') ? path.slice(4) : path;
+        const laneId = path.startsWith('mapping.') ? path.slice('mapping.'.length) : path;
         if ((code === 'invalid_mapping' || code === 'invalid_input') && lanesById.has(laneId)) {
           serverLaneErrors[laneId] = error.message ? String(error.message) : 'This lane mapping was rejected.';
           generalError = null;
         } else {
           generalError = error && typeof error.message === 'string' ? error.message : 'The kanban could not be linked.';
         }
+        showServerMessage = code === 'limit_exceeded';
         errorCode = code === 'offline' || code === 'network' ? 'offline' : code === 'forbidden' || code === 'read_only' || code === 'board_forbidden' ? 'forbidden' : code === 'conflict' || code === 'already_linked' ? 'conflict' : 'other';
         submitting = false;
         notify();

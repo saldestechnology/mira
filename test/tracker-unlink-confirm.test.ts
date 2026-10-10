@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { confirmUnlink, installTrackerUnlinkConfirm } from '../src/tracker/ui/unlink-confirm';
+import type { TrackerKanbanLink } from '../src/tracker-types';
 import type { UnlinkConfirmContext } from '../src/tracker/ui/link-seam';
 import { openRegisteredUnlinkConfirm } from '../src/tracker/ui/link-seam';
 import { FakeElement, flush, need, textOf } from './fake-dom';
@@ -9,6 +10,13 @@ let browser: ReturnType<typeof installTrackerUiBrowser> | null = null;
 afterEach(() => { browser?.uninstall(); browser = null; });
 
 const action = (label: string) => browser!.document.querySelectorAll('button').find((button) => textOf(button) === label)!;
+
+function link(id: string, count: number): TrackerKanbanLink {
+  return {
+    id, boardId: 'board-1', kanbanId: 'kanban-1', workflowId: 'workflow-1', mapping: [], map: {},
+    cardCount: count, createdAt: 0, createdBy: 'user-me', ticketCount: count,
+  };
+}
 
 describe('tracker unlink confirmation', () => {
   it('uses the plural copy and starts with Cancel focused, then resolves true or false', async () => {
@@ -40,8 +48,8 @@ describe('tracker unlink confirmation', () => {
     const calls: string[] = [];
     const context: UnlinkConfirmContext = {
       boardId: 'board-1', kanbanId: 'kanban-1',
-      link: { id: 'link-1', boardId: 'board-1', kanbanId: 'kanban-1', trackerId: 'tracker-1', map: {}, createdAt: 0, ticketCount: 2 },
-      store: { unlinkKanban: async (id: string) => { calls.push(id); return { ok: true, unlinked: 2 }; } } as never,
+      link: link('link-1', 2),
+      store: { unlinkKanban: async (id: string) => { calls.push(id); return { link: link('link-1', 2), unlinked: 2, projectionPending: false }; } } as never,
     };
     const uninstall = installTrackerUnlinkConfirm();
     try {
@@ -59,7 +67,7 @@ describe('tracker unlink confirmation', () => {
     browser = installTrackerUiBrowser();
     const context: UnlinkConfirmContext = {
       boardId: 'board-1', kanbanId: 'kanban-1',
-      link: { id: 'link-2', boardId: 'board-1', kanbanId: 'kanban-1', trackerId: 'tracker-1', map: {}, createdAt: 0, ticketCount: 1 },
+      link: link('link-2', 1),
       store: { unlinkKanban: async () => { throw new Error('offline'); } } as never,
     };
     const uninstall = installTrackerUnlinkConfirm();

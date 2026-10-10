@@ -13,9 +13,15 @@ export interface TrackerKanbanLink {
   id: string;
   boardId: string;
   kanbanId: string;
-  trackerId: string;
+  workflowId: string;
+  mapping: Array<{ laneId: string; stateKey: string; stateId: string }>;
+  /** Lane to tracker state lookup derived from `mapping` for UI consumers. */
   map: Record<string, string>;
+  cardCount: number;
   createdAt: number;
+  createdBy: string;
+  removedAt?: number | null;
+  /** Compatibility alias consumed by the existing unlink dialog. */
   ticketCount: number;
 }
 
@@ -23,19 +29,37 @@ export interface TrackerLinkSuggestion {
   map: Record<string, string | null>;
   unmappedLanes: string[];
   existingCardCount: number;
+  nextKey: string | null;
+  stateNotMapped: string[];
 }
 
 export interface TrackerLinkKanbanInput {
   boardId: string;
   kanbanId: string;
-  map: Record<string, string>;
+  mapping: Record<string, string>;
   createTickets: boolean;
+  project?: string | null;
+  labels?: string[];
+  idempotencyKey: string;
 }
 
 export interface TrackerLinkKanbanResult {
   link: TrackerKanbanLink;
   created: Array<{ cardId: string; key: string }>;
-  skipped: Array<{ cardId: string; reason: string }>;
+  skipped: Array<{ cardId: string; reason: 'unmapped_lane' | 'already_linked' | 'empty_title' }>;
+  projectionPending: boolean;
+}
+
+export interface TrackerUnlinkKanbanResult {
+  link: TrackerKanbanLink;
+  unlinked: number;
+  projectionPending: boolean;
+}
+
+export interface TrackerCreateTicketForCardResult {
+  ticket: TrackerTicket;
+  cardId: string;
+  projectionPending: boolean;
 }
 
 export interface TrackerState {
@@ -169,7 +193,7 @@ export type TrackerLink =
       id: string; kind: 'commit'; provider: 'github'; repo: string; sha: string; title: string;
       url: string; author: { login: string; name?: string; avatarUrl?: string }; branch?: string; at: string;
     }
-  | { id: string; kind: 'card'; boardId: string; kanbanId: string; cardId: string; at: string };
+  | { id: string; kind: 'card'; boardId: string; kanbanId: string; cardId: string; linkId: string; at: string };
 
 export interface TrackerTicket {
   id: string;
