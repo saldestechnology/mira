@@ -62,7 +62,8 @@
 .chat-back:hover { text-decoration: underline; text-underline-offset: 3px; }
 .chat-page-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .chat-page-panel[hidden] { display: none; }
-.chat-conv-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--graphite); }
+.chat-conv-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--tray-text); text-align: center; }
+.chat-conv-empty p { margin: 0; font-size: 15px; font-weight: 700; line-height: 20px; }
 .chat-conv-empty[hidden] { display: none; }
 .chat-page .chat-composer { padding-left: 24px; padding-right: 24px; }
 .chat-page .chat-older, .chat-page .chat-status { padding-left: 24px; padding-right: 24px; }
