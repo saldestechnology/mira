@@ -324,8 +324,8 @@ export function startMeRefresh(overrides: Partial<MeRefreshDeps> = {}): () => vo
     active: () => state.mode === 'signed-in' && state.me.workspace !== undefined,
     visible: () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
     fetchMe: () => api.me(),
-    apply: (me) => {
-      if (state.mode === 'signed-in' && meChanged(state.me, me)) setSignedIn(me);
+    apply: async (me) => {
+      if (state.mode === 'signed-in' && meChanged(state.me, me)) await setSignedIn(me);
     },
     expired: setSignedOut,
     setInterval: (fn, ms) => setInterval(fn, ms),

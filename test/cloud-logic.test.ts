@@ -511,7 +511,7 @@ describe('startMeRefresh', () => {
   }
 
   it('moves a banner and the read-only switch into the signed-in state', async () => {
-    setSignedIn(meWith('member', workspace()));
+    await setSignedIn(meWith('member', workspace()));
     const s = start(async () => meWith('member', workspace({ readOnly: true, banner: 'Pay up' })));
     s.tick();
     await settle();
@@ -523,7 +523,7 @@ describe('startMeRefresh', () => {
 
   it('does not notify anyone when nothing changed', async () => {
     const me = meWith('member', workspace());
-    setSignedIn(me);
+    await setSignedIn(me);
     const s = start(async () => structuredClone(me));
     const before = authState();
     s.tick();
@@ -533,7 +533,7 @@ describe('startMeRefresh', () => {
   });
 
   it('does nothing on a server without a control plane, or when signed out', async () => {
-    setSignedIn(meWith('owner'));
+    await setSignedIn(meWith('owner'));
     const plain = start(async () => meWith('owner'));
     plain.tick();
     await settle();
@@ -549,7 +549,7 @@ describe('startMeRefresh', () => {
   });
 
   it('signs the person out when the session has ended', async () => {
-    setSignedIn(meWith('owner', workspace()));
+    await setSignedIn(meWith('owner', workspace()));
     const s = start(async () => Promise.reject(new ApiError(401, 'unauthenticated', 'Sign in required')));
     s.tick();
     await settle();
@@ -557,10 +557,10 @@ describe('startMeRefresh', () => {
     s.stop();
   });
 
-  it('uses the real timers by default', () => {
+  it('uses the real timers by default', async () => {
     vi.useFakeTimers();
     try {
-      setSignedIn(meWith('owner', workspace()));
+      await setSignedIn(meWith('owner', workspace()));
       const fetchMe = vi.fn<() => Promise<Me>>(async () => meWith('owner', workspace()));
       const stop = startMeRefresh({ fetchMe });
       vi.advanceTimersByTime(ME_REFRESH_MS - 1);
