@@ -104,3 +104,27 @@ The importer writes `projects`, `milestones` and `ticket_relations` directly, in
 - Relations are stored one row per pair: `blocked` becomes `blocks` with the ends swapped, `duplicate` becomes `duplicates`, `related` and `similar` become one `relates_to` row. A `blocks` cycle or a ticket over its limit of 100 relations is skipped and counted (`relations.skippedCycle`, `relations.skippedLimit`).
 - Cycles are never imported: Tabula v1 has no cycles. They stay in the loss report with the affected issue keys.
 - If a table is missing (an older database), the data is listed in the loss report and kept in the local `preserved.jsonl`, and a later `delta` run writes it once the tables exist.
+
+## First rehearsal (50 issues, scratch copy)
+
+This is step 3 of `docs/tracker-dogfood-runbook.md`, in one place. Nothing here touches the live tabulahq volume or writes to Linear.
+
+What you need before you start:
+
+1. **A scratch copy of tabulahq's data.** Restore the pre-import volume snapshot to a scratch volume or a local folder (never the live volume), with the relay stopped. The importer opens `<data-dir>/directory.sqlite` directly. Take a second copy of the folder first, so a rehearsal can be repeated from a clean state.
+2. **The Linear key in the environment only.** The operator puts `LINEAR_API_KEY` into the shell with `scripts/env-get.mjs` from the tabula-cloud repo (it prints nothing). It never goes in argv, a file in a repo, chat or a ticket, and it is unset after the fetch.
+3. **The owner's email** on that copy (`--actor-email`). The importer refuses a user who is not an owner.
+4. **Node 24.10 or newer** on the PATH, and the app's dependencies installed (the script imports from `server/`).
+
+Steps:
+
+1. Fetch once, with archived issues: `node scripts/linear-import.mjs fetch --out ./linear-rehearsal`. Check the count it prints: the total must include the archived Done issues (the dry-run report shows active and archived separately).
+2. Dry run: `node scripts/linear-import.mjs dry-run --snapshot ./linear-rehearsal/snapshot.json --data-dir <scratch copy> --actor-email <owner> --max-issues 50 --out ./linear-rehearsal/report`. Read `report.html`: users matched by email, workflow states mapped, labels merged, the loss report with issue keys. Fix mappings before going on.
+3. Import into the scratch copy: the same command with `import --yes`. It stops at the first failed batch and says which.
+4. Verify: `node scripts/linear-import.mjs verify --snapshot ./linear-rehearsal/snapshot.json --data-dir <scratch copy> --max-issues 50` (`--max-issues` makes it compare the same 50 issues). `scripts/linear-verify.mjs <snapshot> <data-dir>` is the same check for a full import. Every check must pass; the output has counts and keys only, never titles or bodies.
+5. Spot-check in the app against the scratch copy: 10 tickets by key (including an old `TAB-` number that must keep its number), 5 comments with authors and times, and any relations and projects.
+6. Repeat step 3 on the same copy to confirm nothing is created twice (the second run must report 0 created).
+7. Throw the scratch copy away. The real run starts again from a fresh snapshot (runbook step 4), with no `--max-issues`.
+
+Stop and report, and do not start the real run, if verify fails, the archived count is zero, or more than a few users are unmatched.
+
