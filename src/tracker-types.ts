@@ -18,6 +18,8 @@ export interface TrackerKanbanLink {
   /** Lane to tracker state lookup derived from `mapping` for UI consumers. */
   map: Record<string, string>;
   cardCount: number;
+  /** Card projections the server has queued and not yet written to the board (0 once the cards are up to date). */
+  pendingProjections: number;
   createdAt: number;
   createdBy: string;
   removedAt?: number | null;

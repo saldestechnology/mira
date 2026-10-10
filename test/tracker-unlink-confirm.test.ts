@@ -14,7 +14,7 @@ const action = (label: string) => browser!.document.querySelectorAll('button').f
 function link(id: string, count: number): TrackerKanbanLink {
   return {
     id, boardId: 'board-1', kanbanId: 'kanban-1', workflowId: 'workflow-1', mapping: [], map: {},
-    cardCount: count, createdAt: 0, createdBy: 'user-me', ticketCount: count,
+    cardCount: count, pendingProjections: 0, createdAt: 0, createdBy: 'user-me', ticketCount: count,
   };
 }
 

@@ -30,7 +30,7 @@ function uiLink(overrides: Partial<TrackerKanbanLink> = {}): TrackerKanbanLink {
   const mapping = [{ laneId: 'lane-1', stateKey: 'todo', stateId: 'state-todo' }];
   return {
     id: 'link-1', boardId: 'board-1', kanbanId: 'kanban-1', workflowId: 'workflow-1', mapping,
-    map: { 'lane-1': 'todo' }, cardCount: 0, createdAt: 1, createdBy: 'user-me', ticketCount: 0, ...overrides,
+    map: { 'lane-1': 'todo' }, cardCount: 0, pendingProjections: 0, createdAt: 1, createdBy: 'user-me', ticketCount: 0, ...overrides,
   };
 }
 
@@ -373,5 +373,29 @@ describe('linked card projection and entry gating', () => {
     stopUnlink();
     expect(hasRegisteredLinkDialog()).toBe(false);
     expect(hasRegisteredUnlinkConfirm()).toBe(false);
+  });
+});
+
+describe('following a pending projection', () => {
+  it('refreshes the board links until the server reports no pending projections', async () => {
+    const api = createMockTrackerApi({ now: () => 1_000 });
+    let pending = 3;
+    const wire = (n: number): TrackerKanbanLink => ({ id: 'link-1', boardId: 'board-1', kanbanId: 'kanban-1', workflowId: 'wf', mapping: [], map: {}, cardCount: 3, pendingProjections: n, createdAt: 1, createdBy: 'user-me', ticketCount: 3 });
+    vi.spyOn(api, 'linkKanban').mockResolvedValue({ link: wire(3), created: [], skipped: [], projectionPending: true });
+    const listLinks = vi.spyOn(api, 'listLinks').mockImplementation(async () => {
+      pending = Math.max(0, pending - 1);
+      return { links: [wire(pending)] };
+    });
+    const timers: Array<() => void> = [];
+    const store = createTrackerStore(api, { pollMs: 60_000, setTimer: (callback) => { timers.push(callback); return timers.length; }, clearTimer: () => undefined });
+    await store.loadMeta();
+    await store.linkKanban({ boardId: 'board-1', kanbanId: 'kanban-1', mapping: { 'lane-1': 'todo' }, createTickets: false });
+    for (let i = 0; i < 6 && timers.length; i += 1) {
+      timers.splice(0).forEach((callback) => callback());
+      for (let n = 0; n < 12; n += 1) await Promise.resolve();
+    }
+    expect(listLinks).toHaveBeenCalledTimes(3);
+    expect((await store.listLinks('board-1'))[0].pendingProjections).toBe(0);
+    store.destroy();
   });
 });

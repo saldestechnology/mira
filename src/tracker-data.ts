@@ -130,6 +130,7 @@ function normalizeTrackerKanbanLink(value: unknown): TrackerKanbanLink {
     mapping,
     map,
     cardCount: Number.isFinite(cardCount) ? cardCount : 0,
+    pendingProjections: Number.isFinite(Number(row.pendingProjections)) ? Math.max(0, Number(row.pendingProjections)) : 0,
     createdAt: Number(row.createdAt ?? 0),
     createdBy: String(row.createdBy ?? ''),
     ...(typeof row.removedAt === 'number' || row.removedAt === null ? { removedAt: row.removedAt } : {}),
@@ -1082,6 +1083,20 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     return cloneTrackerData(await request);
   }
 
+  /** After a link whose cards were not all written to the board at once: refresh the board's links until the server reports no pending projections (or about a minute passes). */
+  const followingProjection = new Set<string>();
+  function followProjection(boardId: string, attempt = 0): void {
+    if (destroyed || attempt >= 30 || (attempt === 0 && followingProjection.has(boardId))) return;
+    followingProjection.add(boardId);
+    setTimer(() => {
+      void listLinks(boardId, { force: true }).then((links) => {
+        notify();
+        if (links.some((link) => link.pendingProjections > 0)) followProjection(boardId, attempt + 1);
+        else followingProjection.delete(boardId);
+      }).catch(() => { followingProjection.delete(boardId); });
+    }, 2000);
+  }
+
   async function linkKanban(input: TrackerLinkKanbanInput): Promise<TrackerLinkKanbanResult> {
     if (!isOnline()) throw new TrackerError('offline', 'Kanbans can only be linked while online.');
     if (!meta) await loadMeta();
@@ -1098,6 +1113,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       for (const key of listCaches.keys()) if (!watchQueries.has(key)) loadedLists.delete(key);
       for (const [key, query] of watchQueries) if (listListeners.has(key)) void loadList(query, { force: true }).catch(() => undefined);
       await Promise.all(result.created.map(({ key }) => loadTicket(key, true).catch(() => undefined)));
+      if (result.projectionPending || result.link.pendingProjections > 0) followProjection(input.boardId);
       notify();
       return cloneTrackerData(result);
     } catch (caught) {

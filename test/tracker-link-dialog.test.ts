@@ -59,7 +59,7 @@ function result(): TrackerLinkKanbanResult {
   const link: TrackerKanbanLink = {
     id: 'link-1', boardId: 'board-1', kanbanId: 'kanban-1', workflowId: 'workflow-1',
     mapping: [{ laneId: 'doing', stateKey: 'in_progress', stateId: 'state-doing' }], map: { doing: 'in_progress' },
-    cardCount: 18, createdAt: 0, createdBy: 'user-me', ticketCount: 18,
+    cardCount: 18, pendingProjections: 0, createdAt: 0, createdBy: 'user-me', ticketCount: 18,
   };
   return {
     link, created: [], skipped: [], projectionPending: false,

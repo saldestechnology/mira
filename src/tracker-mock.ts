@@ -696,7 +696,7 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       const link: TrackerKanbanLink = {
         id: linkId, boardId: input.boardId, kanbanId: input.kanbanId, workflowId: 'workflow-default', mapping,
         map: Object.fromEntries(mapping.map(({ laneId, stateKey }) => [laneId, stateKey])),
-        cardCount, createdAt: now(), createdBy: meta.me.userId, ticketCount: cardCount,
+        cardCount, pendingProjections: 0, createdAt: now(), createdBy: meta.me.userId, ticketCount: cardCount,
       };
       links.set(link.id, { link, cardIds: linkedCardIds });
       const result: TrackerLinkKanbanResult = { link: copy(link), created: copy(created), skipped: copy(skipped), projectionPending: false };
