@@ -138,6 +138,15 @@ export function chatAvailable(): boolean {
   return me?.chat === true;
 }
 
+/**
+ * Another person is signed in in this tab than the one the saved lists, image bytes and chat messages on this device belong to
+ * (a sign-in link opened in a tab that someone else left open): what the last one had is not for the next one to see.
+ * Call it BEFORE the new identity is written.
+ */
+function dropPreviousUser(me: Me) {
+  if (state.mode === 'signed-in' && state.me.user.id !== me.user.id) forgetCaches();
+}
+
 export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Promise<AuthState> {
   let authEnabled: boolean;
   try {
@@ -158,6 +167,7 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
 
   try {
     const me = await a.me();
+    dropPreviousUser(me);
     clearGuestSession();
     writeStorage(ME_KEY, JSON.stringify(me));
     return commit({ mode: 'signed-in', me });
@@ -227,6 +237,7 @@ export async function signOut(a: Pick<typeof api, 'logout'> = api): Promise<void
 }
 
 export function setSignedIn(me: Me) {
+  dropPreviousUser(me);
   clearGuestSession();
   writeStorage(ME_KEY, JSON.stringify(me));
   commit({ mode: 'signed-in', me });

@@ -1,0 +1,14 @@
+[Unit]
+Description=Pull sealed Tabula workspace backups
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=@NODE@ @HOME@/bin/pull.mjs --config @HOME@/etc/puller.json
+Nice=10
+TimeoutStartSec=4h
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@HOME@/store @HOME@/state

@@ -370,6 +370,7 @@ export interface BackupSummary {
 
 /** The backup engine's own status, as the owner sees it: times in ms since the epoch, null when not known yet. */
 export interface BackupEngineStatus {
+  target: 's3' | 'dir' | null;
   lastSuccessAt: number | null;
   lastFailureAt: number | null;
   lastFailureError: string | null;

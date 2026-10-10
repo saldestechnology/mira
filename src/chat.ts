@@ -58,6 +58,8 @@ interface Channel {
   lastRead: number | null;
   newAfter: number | null;
   loading: boolean;
+  /** Messages that arrived on the socket while the newest page was on its way: the only saved ones that may stay. */
+  arrived: Set<number>;
   loadingOlder: boolean;
   savedOnly: boolean;
   fetchOk: boolean;
@@ -250,6 +252,7 @@ function onFrame(f: Record<string, unknown>) {
   if (!ch) return;
   if ((t === 'message' || t === 'edit') && isMessage(f.message)) {
     if (!ch.visible) return;
+    if (ch.loading) ch.arrived.add(f.message.id);
     ch.messages = keepBounded(ch, mergeMessages(ch.messages, [f.message]));
     settleDelivered([f.message]);
     saveChannel(ch);
@@ -315,6 +318,7 @@ async function refreshInfo(ch: Channel) {
 async function load(ch: Channel) {
   const gen = generation;
   ch.loading = true;
+  ch.arrived = new Set();
   ch.error = null;
   emit(ch);
   if (!ch.messages.length) {
@@ -331,9 +335,10 @@ async function load(ch: Channel) {
     ]);
     if (gen !== generation) return;
     ch.info = { ...info, access: withReadOnly(info.access, workspaceReadOnly || info.access.readOnly) };
-    // frames that arrived while the page was on its way are newer than it and stay; the saved copy does not
-    const top = newestId(page.messages);
-    ch.messages = mergeMessages(page.messages, ch.messages.filter((m) => m.id > top));
+    // Only frames that arrived while the page was on its way stay with it; the saved copy does not, and neither does anything the
+    // server no longer has (retention and erasure delete messages: an empty successful page must empty the saved copy too).
+    ch.messages = mergeMessages(page.messages, ch.messages.filter((m) => ch.arrived.has(m.id)));
+    ch.arrived = new Set();
     ch.next = page.next;
     ch.fetchOk = true;
     ch.savedOnly = false;
@@ -537,7 +542,7 @@ export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
 export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): BoardChat {
   const key = keyOf(kind, ref);
   const ch: Channel = channels.get(key) ?? {
-    key, kind, ref, messages: [], next: null, info: null, lastRead: null, newAfter: null, loading: false, loadingOlder: false,
+    key, kind, ref, messages: [], next: null, info: null, lastRead: null, newAfter: null, loading: false, arrived: new Set(), loadingOlder: false,
     savedOnly: false, fetchOk: false, lost: false, error: null, visible: false, readPut: 0, readTimer: null, listeners: new Set(),
   };
   channels.set(key, ch);
@@ -772,7 +777,17 @@ export function resetChat(): Promise<void> {
   return cache.clearChatCache();
 }
 
-// Signing out anywhere in the app ends chat in this tab (auth.ts deletes the saved copy).
+// Signing out anywhere in the app ends chat in this tab (auth.ts deletes the saved copy), and so does another person signing in:
+// a socket the server bound to the first person's session would keep delivering their private messages to the second.
+let chatUserId: string | null = null;
 onAuth((state) => {
-  if (state.mode === 'signed-out') void resetChat();
+  if (state.mode === 'signed-out') {
+    chatUserId = null;
+    void resetChat();
+    return;
+  }
+  if (state.mode !== 'signed-in') return;
+  const id = state.me.user.id;
+  if (chatUserId !== null && chatUserId !== id) void resetChat();
+  chatUserId = id;
 });

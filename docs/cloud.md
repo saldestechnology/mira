@@ -26,6 +26,8 @@ A hosted workspace runs accounts mode, so it has team chat (docs/chat.md) with n
 
 The endpoints below sit under `/api/internal/`. They need the bearer token and nothing else: no cookie, no `x-tabula` header, and a session cookie that comes along is ignored. The token is compared in constant time (both sides are hashed first, so the length of a guess shows nothing). A missing or wrong token answers `401 {error: 'unauthenticated'}` with `WWW-Authenticate: Bearer`. The public edge must not forward `/api/internal/` to browsers.
 
+For a directory backup pull, the control plane derives and keeps a separate bearer token and gives the instance only its SHA-256 digest in `TABULA_BACKUP_PULL_TOKEN_SHA256`. The instance's `/api/backup-export/` route is public to the service (bearer only, no user session), so the control plane can call it to wake a stopped machine; the returned files remain sealed ciphertext.
+
 ```
 GET /api/internal/usage
   -> { seats, guests, members, updates: { auto: boolean } }
