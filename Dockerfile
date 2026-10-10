@@ -20,6 +20,9 @@ COPY --from=build /icons ./dist/icons
 COPY --from=build /app/dist ./dist
 COPY server ./server
 COPY shared ./shared
+# The Linear importer (docs/linear-import.md) runs inside the image against a stopped workspace; nothing else from scripts/ ships.
+COPY scripts/linear-import.mjs scripts/linear-verify.mjs ./scripts/
+COPY scripts/lib/linear-source.mjs ./scripts/lib/
 VOLUME /data
 EXPOSE 8787
 CMD ["node", "server/relay.mjs"]

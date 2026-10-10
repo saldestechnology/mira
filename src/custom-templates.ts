@@ -229,12 +229,12 @@ export function instantiate(content: TemplateContent, origin: Point, userId: str
 }
 
 const OBJ_TYPES: Record<ObjType, true> = {
-  shape: true, sticky: true, text: true, frame: true, group: true, icon: true, image: true, path: true, connector: true, container: true, lane: true, card: true,
+  shape: true, sticky: true, text: true, frame: true, tracker: true, group: true, icon: true, image: true, path: true, connector: true, container: true, lane: true, card: true,
   'uml-class': true, 'uml-actor': true, 'uml-usecase': true, 'uml-lifeline': true, 'uml-note': true,
   'uml-package': true, 'uml-state': true, 'uml-initial': true, 'uml-final': true, 'uml-component': true,
 };
 // A template never holds an image: its bytes are readable only through the board that has them (docs/images.md, Templates).
-const TYPE_NAMES = new Set<string>(Object.keys(OBJ_TYPES).filter((t) => t !== 'image'));
+const TYPE_NAMES = new Set<string>(Object.keys(OBJ_TYPES).filter((t) => t !== 'image' && t !== 'tracker'));
 
 /** How many of these objects a template would leave out because they are images. */
 export const imagesLeftOut = (objs: Obj[]) => objs.filter((o) => o.type === 'image').length;
@@ -272,6 +272,7 @@ export function validateContent(c: unknown): TemplateContent {
   const ids = new Set<Id>();
   for (const [i, o] of list.entries()) {
     if (!isRecord(o)) fail(`Object ${i + 1} is not an object.`);
+    if (o.type === 'tracker') fail('Templates cannot contain tracker frames.');
     if (typeof o.id !== 'string' || !o.id) fail(`Object ${i + 1} has no id.`);
     if (ids.has(o.id)) fail(`Two objects share the id "${o.id}".`);
     ids.add(o.id);

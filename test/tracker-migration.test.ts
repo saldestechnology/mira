@@ -42,7 +42,7 @@ afterEach(() => {
 describe('tracker migration 13', () => {
   it('applies to a fresh directory with fixed seeds and the required FTS tokenizer', () => {
     const directory = open();
-    expect(MIGRATIONS).toHaveLength(13);
+    expect(MIGRATIONS.length).toBeGreaterThanOrEqual(12);
     expect(typeof MIGRATIONS[11]).toBe('string');
     expect(ftsAvailable(directory.db)).toBe(true);
     expect(directory.db.prepare('SELECT id, name, prefix FROM trackers').all()).toEqual([{ id: 'trk_default', name: 'Tabula', prefix: 'TAB' }]);
@@ -83,8 +83,8 @@ describe('tracker migration 13', () => {
     }
     expect(upgraded.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     const state = readSchemaState(upgraded.db);
-    expect(state).toEqual({ version: 13, minReader: 11, legacy: false });
-    expect(upgraded.schemaReport()).toMatchObject({ build: { schema: 13, maxReader: 11 }, disk: { schema: 13, minReader: 11 } });
+    expect(state).toEqual({ version: MIGRATIONS.length, minReader: 11, legacy: false });
+    expect(upgraded.schemaReport()).toMatchObject({ build: { schema: MIGRATIONS.length, maxReader: 11 }, disk: { schema: MIGRATIONS.length, minReader: 11 } });
     expect(maxReaderOf(MIGRATIONS)).toBe(11);
     upgraded.close();
 
@@ -131,7 +131,7 @@ describe('tracker migration 13', () => {
     expect(upgraded.db.prepare("SELECT title, description FROM ticket_search WHERE ticket_id = 't1'").get())
       .toEqual({ title: 'Existing ticket', description: 'unchanged' });
     expect(upgraded.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-    expect(readSchemaState(upgraded.db)).toEqual({ version: 13, minReader: 11, legacy: false });
+    expect(readSchemaState(upgraded.db)).toEqual({ version: MIGRATIONS.length, minReader: 11, legacy: false });
     expect(typeof MIGRATIONS[12]).toBe('string');
     for (const table of ['projects', 'milestones', 'ticket_relations', 'saved_views']) {
       expect(upgraded.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)).toBeDefined();

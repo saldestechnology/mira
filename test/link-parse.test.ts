@@ -92,13 +92,28 @@ describe('link preview HTML head parser', () => {
     expect(result).toMatchObject({ title: 'Real title', description: 'kept' });
   });
 
-  it('scans pathological and dense heads within a generous linear-time bound', () => {
-    const started = performance.now();
-    const pathological = parseLinkHead(`<head><title>${'<'.repeat(1_000_000)}`, { finalUrl: 'https://example.test/' });
+  it('scans pathological and dense heads within a linear work bound', () => {
+    const pathologicalHtml = `<head><title>${'<'.repeat(1_000_000)}`;
+    const workLimit = pathologicalHtml.length * 8;
+    const originalCharCodeAt = String.prototype.charCodeAt;
+    let charCodeReads = 0;
+    let pathological;
+    try {
+      String.prototype.charCodeAt = function (this: string, index: number) {
+        charCodeReads++;
+        if (charCodeReads > workLimit) throw new Error('link parser exceeded its linear character-code work bound');
+        return originalCharCodeAt.call(this, index);
+      };
+      pathological = parseLinkHead(pathologicalHtml, { finalUrl: 'https://example.test/' });
+    } finally {
+      // parseLinkHead is synchronous, so restore the scoped instrumentation before making assertions.
+      String.prototype.charCodeAt = originalCharCodeAt;
+    }
     const denseMeta = '<meta name="description" content="dense">'.repeat(10_000);
     const hugeAttribute = `<meta property="og:title" content="${'<'.repeat(256_000)}">`;
     const dense = parseLinkHead(`<head>${denseMeta}${hugeAttribute}<title>Done</title></head>`, { finalUrl: 'https://example.test/' });
-    expect(performance.now() - started).toBeLessThan(2000);
+    expect(charCodeReads).toBeGreaterThan(0);
+    expect(charCodeReads).toBeLessThanOrEqual(workLimit);
     expect(pathological.title).toHaveLength(300);
     expect(dense.description).toBe('dense');
     expect(dense.title).toHaveLength(300);

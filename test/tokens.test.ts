@@ -192,6 +192,8 @@ describe('access tokens in the directory', () => {
     const raw = new DatabaseSync(file);
     raw.exec(`
       PRAGMA foreign_keys = OFF;
+      DROP TABLE notifications;
+      UPDATE schema_meta SET value = '0' WHERE key = 'min_reader';
       DROP TABLE saved_views;
       DROP TABLE ticket_relations;
       DROP TABLE milestones;

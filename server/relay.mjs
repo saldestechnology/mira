@@ -220,12 +220,13 @@ let auth = null;
 let api = null;
 let cloud = null;
 let buildApi = null;
-// Team chat (docs/chat.md), accounts mode with TABULA_CHAT=on only. chat.sqlite is opened on first use.
+// Team chat (docs/chat.md), accounts mode, on unless TABULA_CHAT=off. chat.sqlite is opened on first use.
 let chat = null;
 let chatHub = null;
 let chatStore = null;
 let chatRetention = null;
 let chatNotifier = null;
+let trackerNotifier = null;
 let joinCodeService = null;
 if (config.authEnabled) {
   const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
@@ -246,7 +247,7 @@ if (config.authEnabled) {
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
-    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
+    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier, mailAfterMsFromEnv }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
       import('./chat.mjs'),
       import('./chat-access.mjs'),
       import('./chat-hub.mjs'),
@@ -270,8 +271,8 @@ if (config.authEnabled) {
       readOnly: cloud?.limits().readOnly === true,
       log,
     });
-    // Not documented: the relay tests shorten the ten minutes nobody must have looked before a mention email goes
-    const mailAfterMs = Number(env.TABULA_CHAT_MENTION_MAIL_AFTER_MS) || undefined;
+    // Not documented, and only under NODE_ENV=test (chat-notify.mjs)
+    const mailAfterMs = mailAfterMsFromEnv(env);
     chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, log, mailAfterMs });
     chat = { store, access, hub: chatHub, notifier: chatNotifier, limits: createChatLimits({ limits: chatLimitsFromTestEnv(env) }) };
     // A removed member's messages stay without an account behind them (docs/chat.md, Removing and erasing people)
@@ -285,6 +286,19 @@ if (config.authEnabled) {
     });
     chatRetention = createChatRetention({ directory, store, paused: () => maintenance, runWriter: (fn) => snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn(), log });
     chatRetention.start();
+  }
+  if (config.tracker) {
+    const { createTrackerNotifier, trackerTickMsFromTestEnv } = await import('./tracker/outbox.mjs');
+    const { boardAccessForDirectory } = await import('./tracker/access.mjs');
+    trackerNotifier = createTrackerNotifier({
+      directory,
+      mailer: createMailer(config),
+      baseUrl: config.baseUrl,
+      log,
+      boardAccess: boardAccessForDirectory(directory),
+      intervalMs: trackerTickMsFromTestEnv(env),
+    });
+    trackerNotifier.start();
   }
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
@@ -411,6 +425,7 @@ async function enterMaintenance() {
   chatHub?.stop();
   chatRetention?.stop();
   chatNotifier?.stop();
+  trackerNotifier?.stop();
   closeChat();
   roomsFrozen = true;
   for (const room of rooms.values()) {
@@ -911,7 +926,9 @@ function serveStatic(req, res, url) {
     res.writeHead(403).end();
     return;
   }
-  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
+  const appRoute = url.pathname === '/t' || url.pathname.startsWith('/t/')
+    || url.pathname === '/b' || url.pathname.startsWith('/b/');
+  if (appRoute || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
   const ext = path.extname(file);
   const headers = {
     'content-type': MIME[ext] || 'application/octet-stream',
@@ -1307,6 +1324,7 @@ async function stopRelay() {
   chatHub?.stop();
   chatRetention?.stop();
   chatNotifier?.stop();
+  trackerNotifier?.stop();
   if (stopping) {
     await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
     // Edits can arrive during either backup wait. Nothing may yield between this final save and exit.

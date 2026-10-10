@@ -1,3 +1,4 @@
+import { migrationSql } from '../server/schema.mjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -303,7 +304,7 @@ describe('a whole restore', () => {
   it('leaves unrelated files alone (the mail outbox, notes) and restores an older schema, migrating it', async () => {
     const s = await scenario();
     const older = await sqliteBytes((db) => {
-      for (let i = 0; i < 3; i++) db.exec(MIGRATIONS[i]);
+      for (let i = 0; i < 3; i++) db.exec(migrationSql(MIGRATIONS[i]));
       db.exec('PRAGMA user_version = 3');
       db.exec("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'owner@example.com', 'Owner', 'owner', 0, 1)");
       db.exec("INSERT INTO settings (key, value) VALUES ('fixture', 'old schema')");

@@ -642,10 +642,11 @@ describe('kanban MCP card tools', () => {
     expect(createTool.inputSchema.properties.objects.items.properties.type.enum).toEqual(['sticky', 'shape', 'text', 'frame', 'connector']);
 
     const before = (await h.tool(token.token, 'get_board', { boardId: board })).data.counts.total;
-    for (const type of ['container', 'lane', 'card', 'group', 'image']) {
+    for (const type of ['container', 'lane', 'card', 'group', 'image', 'tracker']) {
       const refused = await h.tool(token.token, 'create_objects', { boardId: board, objects: [{ type, x: 0, y: 0 }] });
       expect(refused.error).toBe('invalid_input');
       expect(refused.data.path).toBe('objects[0].type');
+      expect((refused.data.message ?? '').includes('Tracker frames can only be created by the app')).toBe(type === 'tracker');
     }
 
     const cardUpdate = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id: cardId, x: 12, parent: doingId }] });

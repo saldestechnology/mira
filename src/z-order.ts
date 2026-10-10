@@ -68,7 +68,7 @@ export function planStep(objects: Obj[], ids: Iterable<Id>, direction: 1 | -1, o
   for (const id of selected) {
     const o = byId.get(id);
     if (!o) continue;
-    const frame = o.type === 'frame';
+    const frame = o.type === 'frame' || o.type === 'tracker';
     let byKind = buckets.get(o.parent);
     if (!byKind) buckets.set(o.parent, (byKind = new Map()));
     let bucket = byKind.get(frame);
@@ -76,7 +76,7 @@ export function planStep(objects: Obj[], ids: Iterable<Id>, direction: 1 | -1, o
     bucket.add(id);
   }
   for (const [parent, byKind] of buckets) for (const [frame, bucket] of byKind) {
-    const row = sorted.filter((o) => o.parent === parent && (o.type === 'frame') === frame);
+    const row = sorted.filter((o) => o.parent === parent && (o.type === 'frame' || o.type === 'tracker') === frame);
     const step = stepWithin(row, bucket, direction, overlaps);
     if (step) patches.push(...step);
   }

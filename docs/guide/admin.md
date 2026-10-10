@@ -81,7 +81,7 @@ Active [personal access tokens](ai-tools.md) for AI tools, across the workspace:
 
 The **AI** tab turns AI features on for the workspace and sets what they use: the features, the model, whether people may use their own keys, whether guests are included, the hourly limits, and the workspace key. Unlike **Access tokens**, the **AI** tab is always listed in a workspace with sign-in, even if your server cannot store keys yet.
 
-AI features are still being built. Turning them on and choosing features does not change what people can do yet.
+Turning AI on and choosing features makes those features available to people who can edit a board, as long as a usable key exists (the workspace key, a personal key where you allow them, or plan credits on a hosted workspace). Without a key the AI button does not appear. See [AI bar](ai-bar.md) for what people see.
 
 The tab has these settings. The defaults are off, with every feature selected, no personal keys, guests allowed, and 20 runs per person and 200 per workspace each hour.
 
@@ -117,7 +117,7 @@ For a person's own key, see [Your AI key](ai-keys.md).
 
 ## Chat
 
-The **Chat** tab appears when your server has chat turned on. Each setting is saved as soon as you change it.
+The **Chat** tab appears when chat is on. It is on by default in workspaces with sign-in, unless whoever runs your server has turned it off. Each setting is saved as soon as you change it.
 
 - **Workspace channel**: whether everyone except guests has one workspace-wide chat. Turn it off and the channel disappears from the Chat page until you turn it back on. Nothing is deleted.
 - **Viewers**: whether people with view-only access to a board may post in its chat. They can always read it.

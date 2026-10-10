@@ -305,7 +305,9 @@ describe('the S3 client against a fake that verifies every signature', () => {
   });
 
   it('times out a request that never answers, and retries it', async () => {
-    const s3 = await setup({ requestTimeoutMs: 80 });
+    // The client's timer starts when the request is made; on a loaded machine a timeout shorter than the time the request needs
+    // to reach the fake fires first, and the fake then counts fewer requests than the client made.
+    const s3 = await setup({ requestTimeoutMs: 400 });
     fake.rules.push({ method: 'PUT', hang: true, times: 1 });
     await s3.put('k', Buffer.from('v'));
     expect(fake.count('PUT')).toBe(2);

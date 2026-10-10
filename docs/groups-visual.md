@@ -42,7 +42,7 @@ Contrast of the group lines against each theme's canvas (non-text UI needs 3:1; 
 |---|---|---|---|
 | Outline | 1.5 px solid `--group-line` round the item | dashed 1 px (5 4) box 6 px out, plus every member outlined 1.5 px solid | **solid 1.5 px** box 6 px out round the derived rectangle, members outlined **1 px in `--group-member-line`** |
 | Handles | 8 squares, 9 px, 2 px radius, fill `--group-handle`, stroke 1.5 px `--group-line`; rotate circle 10 px above | corner and edge squares on the dashed box, no rotate | the same 8 squares and rotate circle on the solid box |
-| Label | none | none | **name chip** at the outline's top-left, 6 px above it: `Group · 3` (the group's `name` once it has one, else "Group" and the member count), tray colours, 11 px, 600 weight, 20 px high, no radius |
+| Label | none | none | **name chip** at the outline's top-left, 6 px above it: `Group · 3` (the group's `name` once it has one, else "Group" and the member count), tray colours, 11 px, 600 weight, 20 px high, 4 px radius |
 
 The chip is the one extra mark: it is what tells a group from a plain multiple selection at a glance, and it is where the name is read. It moves with the outline, hides while dragging or resizing (so it never trails behind), and is not drawn below 30% zoom, where the solid box already says "group". Nested: the chip shows the selected group's own name only.
 

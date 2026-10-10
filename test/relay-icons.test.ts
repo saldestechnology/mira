@@ -120,6 +120,16 @@ describe('relay: /icons/', () => {
     expect(app.body.toString()).toContain('<title>app</title>');
   });
 
+  it('serves the same SPA shell for tracker ticket, view, and board-position paths', async () => {
+    const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
+    for (const route of ['/t/TAB-123', '/t/inbox/', '/t/projects/project-1', '/t/views/view-1', '/b/board-1?tracker=trk-1&t=TAB-123']) {
+      const response = await get(route);
+      expect([route, response.status, response.headers['content-type']]).toEqual([route, 200, 'text/html; charset=utf-8']);
+      expect(response.headers.location).toBeUndefined();
+      expect(response.body.toString()).toBe(shell);
+    }
+  });
+
   it('only serves GET and HEAD', async () => {
     expect((await get(shardPath, {}, 'POST')).status).toBe(405);
   });

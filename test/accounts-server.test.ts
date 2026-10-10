@@ -223,7 +223,7 @@ describe('accounts mode server', () => {
       expect(owner.user.role).toBe('owner');
       expect(owner.user.email).toBe(OWNER);
       const me = await api(owner.cookie, 'GET', '/api/me');
-      expect(me.body).toEqual({ user: owner.user, teams: [], images: true });
+      expect(me.body).toEqual({ user: owner.user, teams: [], images: true, chat: true });
 
       const second = await signIn(OWNER);
       expect(second.user.id).toBe(owner.user.id);

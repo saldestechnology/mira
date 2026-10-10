@@ -99,10 +99,12 @@ Every event has `id`, `at`, `actor` (user, or `{ kind: 'integration', provider }
 
 ### 2.5 Deep links ⟂
 
+Tracker links use path routes, so they can be opened directly, refreshed, and handled by the app's sign-in gate.
+
 - Ticket: `/t/TAB-123` on the workspace host. Opens the tracker (full screen on phone, the tracker frame focused on a canvas) with the ticket page open. Works for a signed-in member; others see the normal access screen.
 - Board position: `/b/<board>?tracker=<trackerId>&t=TAB-123` places the viewer at the tracker frame with the ticket open.
 - Tab or view: `/t/views/<viewId>`, `/t/inbox`, `/t/my`, `/t/board`, `/t/projects/<projectId>`.
-- A pasted `TAB-123` in a comment, description or chat renders as a **ticket chip** (key + state glyph + title, one line) that links to the ticket. A key that does not resolve stays plain text.
+- A pasted `TAB-123` in a comment, description or chat renders as a **ticket chip** (key + state glyph + title, one line) that links to `/t/TAB-123`. A key that does not resolve stays plain text.
 
 ## 3. The frame on the board
 
@@ -500,7 +502,7 @@ The tracker lives inside a tool whose own chrome is the dark **ink toolbar**; th
 
 **Grid and rhythm**
 - A 12-column grid inside the frame with 24 px gutters at full screen, 16 px in a small frame; an 8 px baseline. Everything aligns: the key column, state column, title column and the property labels share their left edges across rows and pages.
-- Rows separate with **1 px hairlines** in `--tb-c-grey` at 25 %; section heads with a **2 px ink rule** above (the brand's magazine rule). No cards-in-cards, no shadows, no rounded corners (radius 0, as the board UI), no gradients.
+- Rows separate with **1 px hairlines** in `--tb-c-grey` at 25 %; section heads with a **2 px ink rule** above (the brand's magazine rule). No cards-in-cards, no shadows and no gradients. The board content keeps its square geometry; surrounding app chrome uses the shared UI radius tokens.
 - Whitespace does the grouping: 24 px between ticket sections, 8 between rows' content, heads align to the grid, never centred except empty states.
 
 **Type** (the brand has two faces; the tracker uses them as follows)
@@ -532,7 +534,7 @@ Priority is four ascending bars (filled = level; urgent is a filled square with 
 
 **Chrome of the frame**
 - Header: tabs as text (Instrument Sans 600 14 px, uppercase off), active tab a 3 px cobalt underline and ink text, inactive grey; tab bar sits on the 2 px ink rule. No pill buttons, no icon-only tabs above 720 units.
-- Buttons: primary = ink fill, light-paper text, square, turns cobalt on hover (the site turns red; in-app the accent is cobalt); secondary = 1 px ink border. Height 32 px in a frame, 44 px on a phone.
+- Buttons: primary = ink fill, light-paper text, 8 px radius, turns cobalt on hover (the site turns red; in-app the accent is cobalt); secondary = 1 px ink border with the same radius. Height 32 px in a frame, 44 px on a phone.
 - Focus ring: 2 px cobalt outline, 2 px offset, always; never removed.
 - Motion: 120 ms for hover and picker; row reorder 160 ms; one pulse for incoming remote changes; **none** under `prefers-reduced-motion` (state changes cut).
 - The **snapshot** (3.2) uses the same type and rules, so zoomed far out the tracker reads as a printed table on the canvas: key column, title column, a state glyph; **no** tiny text under 9 px; when too small it is just the grid of hairlines and the frame's name in Bodoni.

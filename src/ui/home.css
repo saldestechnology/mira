@@ -40,7 +40,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 /* the Chat link's unread count (docs/chat.md): ink on paper, outlined in red when someone mentioned you */
 .topbar-badge {
   display: none; align-items: center; justify-content: center; min-width: 16px; height: 16px; margin-left: 6px; padding: 0 4px; box-sizing: border-box;
-  background: var(--ink); color: var(--paper); font-size: 10px; font-weight: 700; letter-spacing: 0; line-height: 16px;
+  border-radius: var(--radius-xs); background: var(--ink); color: var(--paper); font-size: 10px; font-weight: 700; letter-spacing: 0; line-height: 16px;
 }
 .topbar-badge.show { display: inline-flex; }
 .topbar-badge.mention { outline: 2px solid var(--danger); outline-offset: 0; }
@@ -62,7 +62,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 /* Buttons: rectangular 36px. Default is an ink outline that inverts on hover; primary is the one signal fill. */
 .home .btn,
 .topbar .btn {
-  height: 36px; padding: 0 16px; border: 1px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink);
+  height: 36px; padding: 0 16px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink);
   font-size: 13px; font-weight: 600; text-decoration: none;
 }
 .home .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }
@@ -75,7 +75,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .topbar .btn.ghost:hover { background: none; text-decoration: underline; text-underline-offset: 4px; }
 
 .home .input {
-  width: 100%; height: 36px; padding: 0 10px 0 34px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper);
+  width: 100%; height: 36px; padding: 0 10px 0 34px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--paper);
   color: var(--ink); appearance: none; -webkit-appearance: none;
 }
 .home .input::placeholder { color: var(--graphite); opacity: 1; }
@@ -113,19 +113,19 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .board-row:hover .board-actions,
 .board-row:focus-within .board-actions { opacity: 1; pointer-events: auto; }
 .board-actions .icon-btn {
-  width: 32px; height: 32px; border: 1px solid transparent; border-radius: 0; background: transparent; color: var(--graphite);
+  width: 32px; height: 32px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--graphite);
 }
 .board-actions .icon-btn:not(:disabled):hover { border-color: var(--danger); background: transparent; color: var(--danger); }
 
 /* Template thumbnails: the objects drawn small in a 16:10 box, flush with the top edge of the card or tile. */
-.tpl-thumb { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; background: var(--canvas); border-bottom: 1px solid var(--rule); }
+.tpl-thumb { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; background: var(--canvas); border-bottom: 1px solid var(--rule); border-radius: var(--radius-xs) var(--radius-xs) 0 0; }
 .tpl-thumb svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 
 /* Templates strip on the home page. */
 .tpl-strip { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .tpl-tile {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; height: 100%; padding: 16px;
-  border: 1px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink); text-align: left;
+  border: 1px solid var(--rule); border-radius: var(--radius-xs); background: var(--paper); color: var(--ink); text-align: left;
 }
 .tpl-tile:not(:disabled):hover { border-color: var(--ink); }
 .tpl-tile .tpl-title { font: 700 16px/1.25 var(--display); letter-spacing: -0.02em; }
@@ -136,7 +136,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 /* Templates page. */
 .tpl-toolbar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; margin-top: 32px; }
 .tpl-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.tpl-chip { height: 32px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink); }
+.tpl-chip { height: 32px; padding: 0 12px; border: 1px solid var(--rule); border-radius: var(--radius-xs); background: var(--paper); color: var(--ink); }
 .tpl-chip:hover { border-color: var(--ink); }
 .tpl-chip[aria-pressed='true'] { border-color: var(--ink); background: var(--ink); color: var(--paper); }
 .tpl-toolbar .home-search { flex: 0 1 320px; width: 100%; margin-top: 0; }
@@ -145,7 +145,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .tpl-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
 .tpl-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px; height: 100%; padding: 24px;
-  border: 1px solid var(--rule); border-radius: 0; background: var(--paper);
+  border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--paper);
 }
 .tpl-card:hover,
 .tpl-card:focus-within { border-color: var(--ink); }
@@ -153,21 +153,21 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .tpl-card .tpl-scope { margin: 0; }
 .tpl-card .tpl-title { margin: 0; font: 700 20px/1.2 var(--display); letter-spacing: -0.02em; }
 .tpl-card .tpl-text { flex: 1; margin: 0; color: color-mix(in srgb, var(--ink) 80%, var(--paper)); }
-.tpl-card .tpl-thumb { width: calc(100% + 48px); margin: -24px -24px 16px; }
+.tpl-card .tpl-thumb { width: calc(100% + 48px); margin: -24px -24px 16px; border-radius: var(--radius-md) var(--radius-md) 0 0; }
 .tpl-card .btn { margin-top: 16px; }
 .tpl-section + .tpl-section { margin-top: 48px; }
 .tpl-section-title { margin: 0 0 16px; font: 700 20px/1.2 var(--display); letter-spacing: -0.02em; }
 .tpl-actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
 .tpl-actions .btn { margin-top: 0; }
 .tpl-actions .icon-btn {
-  width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: 0; background: transparent; color: var(--ink);
+  width: 36px; height: 36px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: transparent; color: var(--ink);
 }
 .tpl-actions .icon-btn:hover { border-color: var(--ink); background: transparent; }
 
-/* The card menu: a square popover like the rest of the page. */
-.tpl-pop { border-radius: 0; border: 1px solid var(--tray-line); }
+/* The card menu shares the rounded popover chrome. */
+.tpl-pop { border-radius: var(--radius-md); border: 1px solid var(--tray-line); }
 .tpl-pop .menu { min-width: 180px; }
-.tpl-pop .menu-item { border-radius: 0; }
+.tpl-pop .menu-item { border-radius: var(--radius-sm); }
 
 .home-foot { padding-top: 16px; border-top: 1px solid var(--rule); color: var(--graphite); font-size: 13px; }
 

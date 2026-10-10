@@ -1,4 +1,4 @@
-/* The review panel of an AI proposal (TAB-160). A right-hand panel like comments, square and hairline-ruled like the
+/* The review panel of an AI proposal (TAB-160). A softly rounded, hairline-ruled right-hand panel like comments and the
    other trays (TAB-48); on phones a sheet above the zoom tray, right of the rail. Theme variables only. */
 .chrome > .aireview {
   position: absolute; right: calc(12px + var(--safe-right)); top: var(--panel-top); width: 360px; max-height: calc(100% - var(--panel-top) - 84px - var(--safe-bottom));
@@ -13,7 +13,7 @@
 .aireview-list > li:last-child { border-bottom: 0; }
 .aireview-list input[type='checkbox'] { flex: none; width: 16px; height: 16px; margin: 9px 0 0; accent-color: var(--signal); }
 .aireview-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.aireview .input { width: 100%; box-sizing: border-box; border-radius: 0; font: 13px/1.35 var(--ui); }
+.aireview .input { width: 100%; box-sizing: border-box; border-radius: var(--radius-sm); font: 13px/1.35 var(--ui); }
 .aireview textarea.input { resize: vertical; min-height: 52px; padding: 7px 10px; }
 .aireview-frame { align-items: center !important; }
 .aireview-frame input[type='checkbox'] { margin-top: 0; }
@@ -28,7 +28,7 @@
 .aireview-member input[type='checkbox'] { margin: 0; }
 .aireview-member-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aireview-member.stale .aireview-member-text { color: var(--tray-muted); text-decoration: line-through; }
-.aireview-tag { flex: none; padding: 1px 6px; border: 1px solid var(--tray-line); color: var(--tray-muted); font-size: 11px; font-weight: 600; }
+.aireview-tag { flex: none; padding: 1px 6px; border: 1px solid var(--tray-line); border-radius: var(--radius-xs); color: var(--tray-muted); font-size: 11px; font-weight: 600; }
 .aireview-foot { border-top: 1px solid var(--tray-line); padding: 10px 16px 14px; }
 .aireview-note { margin: 0 0 10px; color: var(--tray-muted); font-size: 12px; line-height: 1.4; }
 .aireview-actions { display: flex; justify-content: flex-end; gap: 8px; }

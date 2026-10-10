@@ -394,6 +394,34 @@ export const MIGRATIONS = [
   CREATE INDEX saved_views_owner_updated ON saved_views(owner_user_id, updated_at DESC);
   CREATE INDEX saved_views_shared_updated ON saved_views(updated_at DESC) WHERE is_shared = 1;
   `,
+  // Tracker slice 6: the notifications table is the in-app inbox and the email outbox in one (docs/tracker-architecture.md
+  // section 6, Notification fan-out). Purely additive (new table and indexes, foreign keys only CASCADE), so the build before
+  // it still reads the file and the annotation below keeps `minReader` at 11, which keeps a rollback to v5.0.1 possible. One row per person per
+  // event: `dedupe_key` is `ev:<event id>` for event notices and `due:<ticket id>:<due date>` for due-soon notices.
+  // `suppressed_at` marks a notice whose recipient lost access.
+  `
+  -- minReader: 11
+  CREATE TABLE notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    event_id INTEGER REFERENCES ticket_events(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('assigned', 'mentioned', 'commented', 'status_changed', 'due_soon', 'relation_changed', 'integration_activity')),
+    dedupe_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    read_at INTEGER,
+    emailed_at INTEGER,
+    email_attempts INTEGER NOT NULL DEFAULT 0,
+    next_email_at INTEGER,
+    last_email_error_code TEXT,
+    suppressed_at INTEGER
+  );
+  CREATE UNIQUE INDEX notifications_user_dedupe ON notifications(user_id, dedupe_key);
+  CREATE INDEX notifications_user_inbox ON notifications(user_id, read_at, created_at DESC);
+  CREATE INDEX notifications_ticket ON notifications(ticket_id);
+  CREATE INDEX notifications_email_due ON notifications(next_email_at)
+    WHERE next_email_at IS NOT NULL AND emailed_at IS NULL AND suppressed_at IS NULL;
+  `,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');

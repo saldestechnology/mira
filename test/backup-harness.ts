@@ -63,7 +63,13 @@ export async function harness({ accounts = false, env = {}, pageSize = 1000, see
     fs.mkdirSync(path.dirname(file(rel)), { recursive: true });
     fs.writeFileSync(file(rel), data);
   };
-  const config = () => loadBackupConfig(envFor(fake, env), () => {})!;
+  const config = () => {
+    const loaded = loadBackupConfig(envFor(fake, env), () => {})!;
+    // The snapshot barrier abandons a copy that outlasts its hold (5 s by default) and the run then fails. A loaded CI runner can
+    // take that long for a run of these tests, so every backup test gets the largest hold unless it names its own.
+    if (env.TABULA_BACKUP_SNAPSHOT_MAX_HOLD_SECONDS === undefined) loaded.snapshotMaxHoldSeconds = 60;
+    return loaded;
+  };
 
   const index = (ids: string[]) =>
     Buffer.from(JSON.stringify({ v: 1, versions: ids.map((id, i) => ({ id, createdAt: 1000 + i, kind: 'auto', label: null, by: null, byName: null, objects: 1, bytes: 10, hash: `h${i}`, from: null })) }));

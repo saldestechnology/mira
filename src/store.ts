@@ -18,6 +18,7 @@ export const COLOR_FIELDS: ReadonlySet<string> = new Set(['fill', 'stroke', 'tex
 /** Boolean flags on an object: a value that is not true or false is not written (TAB-198, TAB-203). */
 const FLAG_FIELDS: ReadonlySet<string> = new Set(['hidden', 'locked', 'flipX', 'flipY']);
 const BOX_FLAG_FIELDS: ReadonlySet<string> = new Set(['flipX', 'flipY']);
+const TRACKER_CARD_PROJECTION_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker']);
 
 export const DEFAULT_META: BoardMeta = {
   name: 'Untitled board',
@@ -53,6 +54,7 @@ function movedBetween(before: ContainerLayout | null | undefined, after: Contain
 }
 
 const cmpZ = (a: Obj, b: Obj) => (a.z < b.z ? -1 : a.z > b.z ? 1 : a.id < b.id ? -1 : 1);
+const isFrameLike = (o: Obj) => o.type === 'frame' || o.type === 'tracker';
 const EMPTY_GROUP_CLEANUP = Symbol('empty-group-cleanup');
 
 /**
@@ -270,12 +272,12 @@ export class Store {
   ordered(): Obj[] {
     if (this.orderDirty) {
       const all = [...this.cache.values()];
-      const frames = all.filter((o) => o.type === 'frame').sort(cmpZ);
-      const rest = all.filter((o) => o.type !== 'frame' && !this.isLaidOut(o)).sort(cmpZ);
+      const frames = all.filter(isFrameLike).sort(cmpZ);
+      const rest = all.filter((o) => !isFrameLike(o) && !this.isLaidOut(o)).sort(cmpZ);
       const out: Obj[] = [...frames];
       const seen = new Set<Id>(frames.map((o) => o.id));
       const append = (o: Obj) => {
-        if (seen.has(o.id) || o.type === 'frame' || this.isLaidOut(o)) return;
+        if (seen.has(o.id) || isFrameLike(o) || this.isLaidOut(o)) return;
         seen.add(o.id);
         out.push(o);
         if (isGroup(o)) {
@@ -389,16 +391,24 @@ export class Store {
   }
 
   create(o: Obj) {
-    const stored = isGroup(o) ? { ...o, x: 0, y: 0, w: 0, h: 0, rotation: 0 } : o;
+    const stored = isGroup(o) ? { ...o, x: 0, y: 0, w: 0, h: 0, rotation: 0 }
+      : o.type === 'tracker' ? { ...o, w: Math.max(480, Number.isFinite(o.w) ? o.w : 0), h: Math.max(360, Number.isFinite(o.h) ? o.h : 0), rotation: 0 }
+      : o;
     // a colour outside the grammar is left out, so the object takes its type's default (TAB-203). A kanban container,
     // lane or card keeps what it has: its fill may be a palette key, which its own drawing checks (kanbanColor).
     const checked = (k: string) => COLOR_FIELDS.has(k) && !isContainerType(stored.type);
     // a flag such as `hidden` (TAB-198) is a boolean or absent; anything else is left out rather than read as truthy
     const entries = Object.entries(stored)
-      .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null) && (!FLAG_FIELDS.has(k) || typeof v === 'boolean') && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored))))
+      .filter(([k, v]) => v !== undefined
+        && !(stored.type === 'card' && TRACKER_CARD_PROJECTION_FIELDS.has(k))
+        && k !== 'ext'
+        && (!checked(k) || cleanColor(v) !== null)
+        && (!FLAG_FIELDS.has(k) || typeof v === 'boolean')
+        && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored))))
       .map(([k, v]): [string, unknown] => [k, checked(k) ? cleanColor(v) : v]);
     this.objects.set(o.id, new Y.Map(entries));
     if (isContainerType(o.type)) this.needFeature(FEATURES.containers);
+    if (o.type === 'tracker') this.needFeature(FEATURES.tracker);
   }
 
   update(id: Id, patch: Partial<Obj> | Record<string, unknown>) {
@@ -408,15 +418,21 @@ export class Store {
     let wroteField = false;
     let parentChanged = false;
     for (const [k, raw] of Object.entries(patch)) {
+      const currentType = m.get('type');
+      const type = (patch as Record<string, unknown>).type ?? currentType;
+      if ((currentType === 'card' || type === 'card') && TRACKER_CARD_PROJECTION_FIELDS.has(k)) continue;
+      if (k === 'ext') continue;
       if (group && ['x', 'y', 'w', 'h', 'rotation'].includes(k)) continue;
-      const type = (patch as Record<string, unknown>).type ?? m.get('type');
       if (BOX_FLAG_FIELDS.has(k) && (type === 'connector' || type === 'group')) continue;
+      if (type === 'tracker' && k === 'rotation') continue;
       if (raw === undefined) {
         if (m.has(k)) { m.delete(k); wroteField = true; if (k === 'parent') parentChanged = true; }
         continue;
       }
       // a colour outside the grammar is not written; the object keeps the colour it has (TAB-203; kanban types as in create)
-      const v = COLOR_FIELDS.has(k) && !(typeof type === 'string' && isContainerType(type)) ? cleanColor(raw) : raw;
+      const v = type === 'tracker' && (k === 'w' || k === 'h') && typeof raw === 'number' && Number.isFinite(raw)
+        ? Math.max(k === 'w' ? 480 : 360, raw)
+        : COLOR_FIELDS.has(k) && !(typeof type === 'string' && isContainerType(type)) ? cleanColor(raw) : raw;
       if (v === null) continue;
       if (FLAG_FIELDS.has(k) && typeof v !== 'boolean') continue;
       const cur = m.get(k);
@@ -426,9 +442,17 @@ export class Store {
         if (k === 'parent') parentChanged = true;
       }
     }
+    if (m.get('type') === 'tracker') {
+      for (const [key, min] of [['w', 480], ['h', 360]] as const) {
+        const value = m.get(key);
+        if (typeof value === 'number' && Number.isFinite(value) && value < min) { m.set(key, min); wroteField = true; }
+      }
+      if (m.get('rotation') !== 0) { m.set('rotation', 0); wroteField = true; }
+    }
     if (m.size && (!group || wroteField)) m.set('updatedAt', Date.now());
     const type = (patch as Record<string, unknown>).type;
     if (typeof type === 'string' && isContainerType(type)) this.needFeature(FEATURES.containers);
+    if (type === 'tracker') this.needFeature(FEATURES.tracker);
     if (parentChanged) {
       const transaction = this.doc._transaction;
       if (transaction) this.locallyCleanedEmptyGroupTransactions.add(transaction);
@@ -610,9 +634,15 @@ export class Store {
    * `create` and `update`, such as a restore; the flag is only ever added, never taken away.
    */
   syncFeatures() {
+    let containers = false;
+    let tracker = false;
     for (const m of this.objects.values()) {
-      if (isContainerType(String(m.get('type')))) return this.needFeature(FEATURES.containers);
+      const type = String(m.get('type'));
+      if (isContainerType(type)) containers = true;
+      if (type === 'tracker') tracker = true;
     }
+    if (containers) this.needFeature(FEATURES.containers);
+    if (tracker) this.needFeature(FEATURES.tracker);
   }
 
   getMeta(): BoardMeta {

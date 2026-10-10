@@ -1,3 +1,4 @@
+import { migrationSql } from '../server/schema.mjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -55,7 +56,7 @@ describe('migrations', () => {
     const file = path.join(tmp(), 'directory.sqlite');
     const old = new DatabaseSync(file);
     old.exec('PRAGMA foreign_keys = ON');
-    old.exec(MIGRATIONS[0]);
+    old.exec(migrationSql(MIGRATIONS[0]));
     old.exec('PRAGMA user_version = 1');
     const insert = (sql: string, ...params: (string | number)[]) => old.prepare(sql).run(...params);
     insert("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'a@example.com', 'Ada', 'member', 0, 1)");

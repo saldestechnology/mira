@@ -1,4 +1,4 @@
-/* Share dialog: who has a role on the board. Theme variables only; radius 0, no shadows, hairlines.
+/* Share dialog: who has a role on the board. Theme variables only; dialog and control radius tokens, no shadows, hairlines.
    Rows wrap: at phone width the role select and Remove sit on their own line under the name. */
 
 .share-people { display: grid; gap: 12px; min-width: 0; margin-bottom: 16px; }
@@ -36,7 +36,7 @@
 .join-code-field { display: grid; gap: 4px; min-width: 0; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--tray-muted); }
 .join-code-create .input { width: 100%; max-width: 100%; min-width: 0; }
 .join-code-create .btn { min-width: 0; align-self: end; }
-.join-code-created { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--tray-text); background: var(--tray); }
+.join-code-created { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--tray-text); border-radius: var(--radius-md); background: var(--tray); }
 .join-code-created-head, .join-code-link-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .join-code-value { display: block; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; font: 700 clamp(28px, 8vw, 40px)/1.1 var(--display); letter-spacing: .12em; color: var(--tray-text); }
 .join-code-link { flex: 1 1 12rem; width: 100%; min-width: 0; }
@@ -51,4 +51,5 @@
   .join-code-create .join-code-field:nth-child(3) { grid-column: 1; }
   .join-code-create .btn { grid-column: 2; }
   .join-code-created-head { align-items: flex-start; }
+  .join-code-created-head button, .join-code-link-row button { min-height: 44px; }
 }

@@ -45,10 +45,10 @@ One tray, three rows. Row 2 comes first in the document and in the tab order; CS
 | Part | Spec |
 | --- | --- |
 | Tray | `.tray`: `background: var(--tray)`, `color: var(--tray-text)`, `border-radius: var(--radius)`, `box-shadow: var(--shadow)`, plus the 1px `--tray-line` outline the other trays get on non-default themes. `overflow: hidden` so the progress rule and corners clip. Width `min(640px, 100%)` of the dock. Padding 0; rows own their padding (8px). |
-| Row 1, chips | Horizontally scrollable, no scrollbar. Each chip is the app's `.chip`: 28px high, square (radius 0, as every control since TAB-48), `color-mix(in srgb, var(--tray-text) 6%, transparent)` fill, 12.5px/500. Gap 6px. Padding 8px 8px 0. |
+| Row 1, chips | Horizontally scrollable, no scrollbar. Each chip is the app's `.chip`: 28px high, 4px radius, `color-mix(in srgb, var(--tray-text) 6%, transparent)` fill, 12.5px/500. Gap 6px. Padding 8px 8px 0. |
 | Row 2 | 8px padding, 8px gaps, min height 52px. Controls 36px high. |
 | Grip | 20px wide, six-dot glyph in `--tray-muted`, `cursor: grab`. Desktop only. |
-| Context button | 36px, 1px `--tray-line` border, radius 0, 12.5px/600, label plus a 14px chevron. Opens a menu. |
+| Context button | 36px, 1px `--tray-line` border, 8px radius, 12.5px/600, label plus a 14px chevron. Opens a menu. |
 | Prompt | The app's `.input` look: 36px, 8px radius, 1px `--tray-line` border, 6% `--tray-text` fill, 13px. Focus: border `var(--signal)`. Placeholder `--tray-muted`. A 32px history icon button sits inside its right end. |
 | Model chip | Text button, 12px/500, `--tray-muted`, hover `--tray-hover` with `--tray-text`. Opens a small popover (see "Cost and model"). |
 | Run | `.btn.primary`: `var(--signal)` fill, `var(--on-signal)` text, 36px, 600. |
@@ -56,7 +56,7 @@ One tray, three rows. Row 2 comes first in the document and in the tab order; CS
 | Disclosure | Row 3. 11px/16px, `--tray-muted`, 1px `--tray-line` rule above, padding 6px 12px 8px. Two segments separated by a centred dot: what is sent, then who pays. |
 | Progress rule | 2px, along the tray's bottom edge, `var(--signal)`, only while running. |
 
-Swiss rules applied: hairlines instead of boxes, one accent colour, no icons in the chips, no gradients, text sizes from the app's own set (13px controls, 12.5px chips, 11px disclosure), spacing on 8px. Since the TAB-48 Swiss pass every control is square (radius 0: chips, buttons, the bar itself and its popovers) and trays have a 1px `--tray-line` hairline instead of a shadow; only avatars, colour swatches and dots stay round. The bar follows that, so it looks like its neighbours.
+Swiss rules applied: hairlines instead of boxes, one accent colour, no icons in the chips, no gradients, text sizes from the app's own set (13px controls, 12.5px chips, 11px disclosure), spacing on 8px. Chips use the 4px radius, buttons 8px, and the bar and popovers 12px. Trays keep their 1px `--tray-line` hairline; no added shadows. Avatars stay round, and the bar follows the shared UI chrome tokens.
 
 ### Chips
 

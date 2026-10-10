@@ -98,7 +98,7 @@
 .admin-check { display: inline-flex; align-items: center; gap: 8px; color: var(--graphite); }
 .admin-check input { width: 16px; height: 16px; accent-color: var(--ink); }
 .admin-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
-.admin .admin-chip { height: 32px; padding: 0 12px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--graphite); }
+.admin .admin-chip { height: 32px; padding: 0 12px; border: 1px solid var(--rule); border-radius: var(--radius-xs); background: var(--paper); color: var(--graphite); }
 .admin .admin-chip:hover { border-color: var(--ink); color: var(--ink); }
 .admin .admin-chip.on { border-color: var(--ink); background: var(--ink); color: var(--paper); }
 
@@ -125,7 +125,7 @@
 .admin-cell-label { display: none; }
 .admin .btn-row.admin-actions { justify-content: flex-end; gap: 8px; }
 .admin-badge {
-  display: inline-block; margin-left: 8px; padding: 0 6px; border: 1px solid var(--ink); color: var(--ink);
+  display: inline-block; margin-left: 8px; padding: 0 6px; border: 1px solid var(--ink); border-radius: var(--radius-xs); color: var(--ink);
   line-height: 18px; vertical-align: 1px;
 }
 .admin-select { position: relative; min-width: 0; }
@@ -141,7 +141,7 @@
 
 /* Buttons: rectangular, 32px. Default is an ink outline that inverts on hover; primary is the one signal fill. */
 .admin .btn {
-  height: 32px; padding: 0 12px; border: 1px solid var(--ink); border-radius: 0; background: none; color: var(--ink);
+  height: 32px; padding: 0 12px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: none; color: var(--ink);
   font-size: 13px; font-weight: 600; text-decoration: none;
 }
 .admin .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }
@@ -157,11 +157,11 @@
 .admin .btn.armed:not(:disabled):hover { background: var(--danger); color: var(--paper); }
 
 .admin .input {
-  height: 32px; padding: 0 10px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink);
+  height: 32px; padding: 0 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink);
 }
 .admin .input:focus { border-color: var(--ink); }
 .admin .input[type='search'] { min-width: 0; width: 100%; }
-.admin .icon-btn { border-radius: 0; }
+.admin .icon-btn { border-radius: var(--radius-sm); }
 .admin .icon-btn:hover { background: var(--ink); color: var(--paper); }
 .admin-token-create { display: grid; justify-items: start; gap: 12px; min-width: 0; margin-bottom: 24px; }
 .admin-token-create .admin-note { width: 100%; min-width: 0; margin: 0; }

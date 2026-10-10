@@ -1,4 +1,5 @@
 import { appendTicketEvent } from './events.mjs';
+import { fanOut } from './notify.mjs';
 import { actorInfo, getDb, inTransaction, newId, requireWritable } from './shared.mjs';
 import { refreshTicketSearch } from './search.mjs';
 
@@ -84,6 +85,7 @@ export function allocateTicket({
       createdAt: now,
       after: fields.eventAfter,
     });
+    fanOut({ db, ticketId, eventId: eventSeq, eventType: 'created', actor, createdAt: now });
     db.prepare('UPDATE tickets SET updated_seq = ? WHERE id = ?').run(eventSeq, ticketId);
     for (const field of fields.versionedFields ?? ['title', 'description', 'state', 'priority', 'assignee', 'labels', 'due', 'parent', 'project', 'milestone']) {
       db.prepare(

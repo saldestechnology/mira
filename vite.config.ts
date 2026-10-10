@@ -58,6 +58,8 @@ const vitePort = Number(process.env.VITE_PORT) || 5173;
 // Vite proxies sync and API requests to the selected relay port.
 export default defineConfig({
   plugins: [docsPages, demoConfigPlugin, demoBuildPlugin()],
+  // Tracker and board deep links are HTML5 paths and must reach the SPA entry in development too.
+  appType: 'spa',
   server: {
     port: vitePort,
     strictPort: true,

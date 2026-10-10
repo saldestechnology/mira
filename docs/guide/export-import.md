@@ -4,7 +4,7 @@ You can save a board as an image, a file you can reopen, or text. You can also b
 
 ## Export
 
-Open the board menu (the three-dot **Menu** button at the top right). The **Export** section lists every format. If you have items selected, the heading reads **Export selection** and PNG, SVG and JSON contain only those items (plus anything inside selected frames, and connectors between exported items).
+Open the board menu (the three-dot **Menu** button at the top right). The **Export** section lists every format. If you have items selected, the heading reads **Export selection** and PNG, SVG and JSON contain those items, contents of selected frames or groups, and connectors between exported items.
 
 | Item | What you get |
 |---|---|
@@ -28,7 +28,7 @@ A `.drift` file holds the complete board, including comments, polls and votes, t
 
 ### JSON snapshot
 
-A text file with the board's settings, objects, session steps, comments and polls. It does not include edit history. With a selection, it contains only the selected objects.
+A text file with the board's settings, objects, session steps, comments and polls. It does not include edit history. With a selection, it contains the selected objects, visible descendants of selected frames or groups, connectors between included objects and selected connectors whose bound ends are included. It leaves out hidden objects and does not include a selected object's containing frame or group unless that ancestor is selected too.
 
 ### Markdown summary
 

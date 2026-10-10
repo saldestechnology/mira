@@ -72,23 +72,30 @@ describe('tracker version capability and release reader', () => {
     expect(() => loadConfig({ TABULA_TRACKER: 'maybe' })).toThrow(/TABULA_TRACKER must be on or off/);
   });
 
-  it('declares schema 13 with maxReader 11 and lets the schema-11 reader open it', () => {
-    expect(MIGRATIONS).toHaveLength(13);
+  it('declares the latest schema with v5.0.1 as its oldest reader and lets that build open it', () => {
+    const latest = MIGRATIONS.length;
+    const v501 = MIGRATIONS.slice(0, 11);
+    expect(latest).toBeGreaterThanOrEqual(14);
     expect(maxReaderOf(MIGRATIONS)).toBe(11);
     const db = new DatabaseSync(':memory:');
     try {
-      expect(migrate(db, MIGRATIONS, 'directory')).toEqual({ version: 13, minReader: 11, legacy: false });
+      expect(migrate(db, MIGRATIONS, 'directory')).toEqual({ version: latest, minReader: 11, legacy: false });
       const state = readSchemaState(db);
-      expect(state).toEqual({ version: 13, minReader: 11, legacy: false });
+      expect(state).toEqual({ version: latest, minReader: 11, legacy: false });
       expect(canRead(state, 11)).toBe(true);
-      expect(migrate(db, MIGRATIONS.slice(0, 12), 'previous directory build')).toEqual(state);
-      expect(Number(db.prepare('PRAGMA user_version').get()!.user_version)).toBe(13);
+      // the v5.0.1 build knows 11 migrations: it opens the file, changes nothing and its own tables still work
+      expect(migrate(db, v501, 'v5.0.1 directory build')).toEqual(state);
+      expect(migrate(db, MIGRATIONS.slice(0, latest - 1), 'previous directory build')).toEqual(state);
+      expect(Number(db.prepare('PRAGMA user_version').get()!.user_version)).toBe(latest);
+      db.prepare("INSERT INTO users (id, email, name, role, created_at) VALUES ('u1', 'a@example.com', 'A', 'owner', 1)").run();
+      expect(db.prepare('SELECT COUNT(*) AS n FROM users').get()).toEqual({ n: 1 });
+      expect(db.prepare('SELECT COUNT(*) AS n FROM notifications').get()).toEqual({ n: 0 });
     } finally {
       db.close();
     }
 
     const result = spawnSync(process.execPath, ['scripts/release-info.mjs'], { cwd: process.cwd(), encoding: 'utf8' });
     expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({ schema: { directory: 13 }, maxReader: { directory: 11 } });
+    expect(JSON.parse(result.stdout)).toMatchObject({ schema: { directory: MIGRATIONS.length }, maxReader: { directory: 11 } });
   });
 });

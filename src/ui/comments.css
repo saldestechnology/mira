@@ -10,7 +10,7 @@
 .comment-who { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; font-size: 13px; }
 .comment-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .comment-time, .comment-row-meta { color: var(--tray-muted); font-size: 12px; white-space: nowrap; }
-.comment-badge { padding: 2px 7px; border-radius: 0; background: var(--tray-2); color: var(--tray-muted); font-size: 11.5px; font-weight: 600; }
+.comment-badge { padding: 2px 7px; border-radius: var(--radius-xs); background: var(--tray-2); color: var(--tray-muted); font-size: 11.5px; font-weight: 600; }
 .comment-guest { background: var(--signal); color: var(--on-signal); }
 .comment-avatar {
   width: 24px; height: 24px; flex: none; border-radius: 50%; background: var(--c, var(--tray-2)); color: #fff;
@@ -34,18 +34,18 @@
 .comment-toggle { position: relative; }
 .comment-count {
   display: none; position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
-  border-radius: 0; background: var(--signal); color: var(--on-signal); font-size: 10px; font-weight: 700; line-height: 16px;
+  border-radius: var(--radius-xs); background: var(--signal); color: var(--on-signal); font-size: 10px; font-weight: 700; line-height: 16px;
   text-align: center; pointer-events: none;
 }
 .comment-count.show { display: block; }
 
 /* The side tray (src/ui/side-tray.ts): Comments and, where chat is on, Chat as two tabs of one panel, placed like the
-   properties panel below the top bars. Swiss: radius 0, no shadow, a hairline edge and a 2px rule under the head. */
+   properties panel below the top bars. Swiss: 12px tray radius, no added shadow, a hairline edge and a 2px rule under the head. */
 :root .chrome > .side-tray.tray,
-:root:not([data-theme='default']) .chrome > .side-tray.tray { border-radius: 0; box-shadow: none; }
+:root:not([data-theme='default']) .chrome > .side-tray.tray { border-radius: var(--radius-md); box-shadow: none; }
 .side-tray {
   position: absolute; right: calc(12px + var(--safe-right)); top: var(--panel-top); width: min(336px, calc(100% - var(--rail-clear) - 12px - var(--safe-right)));
-  max-height: calc(100% - var(--panel-top) - 84px - var(--safe-bottom)); display: none; flex-direction: column; box-sizing: border-box;
+  max-height: calc(100% - var(--panel-top) - 84px - var(--safe-bottom)); display: none; flex-direction: column; box-sizing: border-box; overflow: hidden;
   border: 1px solid var(--tray-line);
 }
 .side-tray.show { display: flex; }
@@ -60,7 +60,7 @@
 .side-tray-tabs { flex: 1; align-self: stretch; display: flex; gap: 24px; min-width: 0; }
 .side-tray-tabs[hidden], .side-tray-title[hidden] { display: none; }
 .side-tray-tab {
-  position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; border-radius: 0;
+  position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; border-radius: var(--radius-sm);
   background: transparent; color: var(--tray-muted);
 }
 .side-tray-tab:hover, .side-tray-tab.on { color: var(--tray-text); }
@@ -75,7 +75,7 @@
 .comments-list { display: flex; flex-direction: column; margin-top: 16px; border-top: 1px solid var(--tray-line); }
 .comment-row {
   display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 8px 0; border: 0; border-bottom: 1px solid var(--tray-line);
-  border-radius: 0; background: transparent; color: var(--tray-text); text-align: left;
+  border-radius: var(--radius-sm); background: transparent; color: var(--tray-text); text-align: left;
 }
 .comment-row:hover { background: var(--tray-hover); }
 .comment-row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }

@@ -2,7 +2,7 @@
   position: fixed; top: calc(68px + var(--safe-top)); left: 50%; transform: translateX(-50%); z-index: 30;
   width: max-content; max-width: min(560px, calc(100% - 24px - var(--safe-left) - var(--safe-right)));
   display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
-  padding: 10px 12px 10px 16px; border-radius: 0;
+  padding: 10px 12px 10px 16px; border-radius: var(--radius-md);
   background: var(--tray); color: var(--tray-text);
   box-shadow: var(--shadow), inset 3px 0 0 var(--danger);
   font-size: 14px; line-height: 1.4;

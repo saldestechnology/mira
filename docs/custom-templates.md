@@ -131,7 +131,7 @@ API, with `compile()` and the same session, CSRF and read-only rules as the boar
 
 ## 6. UI (Swiss style, as approved)
 
-All of this follows `src/ui/admin.css` and the TAB-8 home styles: hairline rows, 11 px uppercase labels, square controls, `--signal` only for the primary action.
+All of this follows `src/ui/admin.css` and the TAB-8 home styles: hairline rows, 11 px uppercase labels, 8 px control radii, `--signal` only for the primary action.
 
 - **Save as template.** Shown in three places: the quick-action bar's **More** menu for a selection, the right-click/selection menu, and **Board menu → Save board as template**. It opens a dialog (the shared `dialog()`) with fields Name (prefilled from the frame name or board name), Category (select of the built-in categories plus "Custom"; no free text), Description, Include session steps (checkbox, only when relevant), and in accounts mode **Share with**: Only me / a team / Everyone in the workspace (see Q1/Q2). A live thumbnail sits on the right. Buttons: Cancel, **Save template** (primary). A toast confirms with a "View" link to the Templates page.
 - **Templates page (`#/templates`).** New first section **My templates** above the built-ins, same card grid (thumbnail on top now), plus a "Shared with me" group in accounts mode. Each custom card has **Use template** (primary) and a `⋯` menu: Insert into a board…, Edit, Rename, Duplicate, Export file, Delete (Delete opens a confirm). Category filter and search cover both groups. An empty state explains how to save one, with a small graphic from TAB-64.

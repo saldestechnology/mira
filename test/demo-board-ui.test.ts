@@ -63,11 +63,28 @@ describe('demo board UI', () => {
         onToggle: (fn: () => void) => { listeners.push(fn); },
       };
     });
-    mocks.library.mockImplementation(() => ({
-      tab: null,
-      open: vi.fn<(...args: unknown[]) => void>(),
-      onChange: vi.fn<(...args: unknown[]) => void>(),
-    }));
+    let libraryTab: string | null = null;
+    let libraryDrawer: FakeElement | null = null;
+    const libraryListeners: ((tab: string | null) => void)[] = [];
+    const openLibrary = vi.fn<(tab: string | null) => void>((tab) => {
+      libraryTab = tab;
+      if (libraryDrawer) {
+        libraryDrawer.dataset.tab = tab ?? '';
+        libraryDrawer.classList.toggle('show', !!tab);
+      }
+      libraryListeners.forEach((fn) => fn(tab));
+    });
+    mocks.library.mockImplementation((_app, parent) => {
+      libraryDrawer = browser!.document.createElement('aside') as FakeElement;
+      libraryDrawer.className = 'drawer tray';
+      (parent as FakeElement).appendChild(libraryDrawer);
+      return {
+        get tab() { return libraryTab; },
+        open: openLibrary,
+        onChange: vi.fn<(fn: (tab: string | null) => void) => void>((fn) => { libraryListeners.push(fn); }),
+      };
+    });
+    const currentDrawer = () => libraryDrawer as unknown as FakeElement;
 
     const listeners = new Map<string, (() => void)[]>();
     const obj = { id: 'sample-lane', type: 'lane' };
@@ -135,5 +152,15 @@ describe('demo board UI', () => {
     expect(root.querySelector('.aibar-fab')).toBeNull();
     expect(root.querySelector('.ailive')).toBeNull();
     expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes('/api/ai/config'))).toEqual([]);
+
+    const templatesButton = control(root, 'Templates and team exercises');
+    templatesButton.click();
+    const drawer = currentDrawer();
+    expect(drawer.classList.contains('show')).toBe(true);
+    expect(drawer.dataset.tab).toBe('templates');
+    const closeEscapeDrawer = Reflect.get(app, 'closeEscapeDrawer') as (() => boolean) | null;
+    expect(closeEscapeDrawer?.()).toBe(true);
+    expect(drawer.classList.contains('show')).toBe(false);
+    expect(browser.document.activeElement).toBe(templatesButton);
   });
 });

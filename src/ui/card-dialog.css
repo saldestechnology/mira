@@ -1,5 +1,5 @@
 /* The card dialog and the Labels dialog (docs/kanban.md, Cards and Labels). Chrome, so tray tokens as every dialog; theme
-   variables only, radius 0, hairlines, 11px uppercase labels. A label's swatch colour is set inline (--c) from the label's
+   variables only, large dialog radius with small controls and xs chips/swatches, hairlines, 11px uppercase labels. A label's swatch colour is set inline (--c) from the label's
    palette key, so it is never a stored string. At phone width the card dialog is a bottom sheet: the head stays, the
    body scrolls, at most 85% of the view high. */
 
@@ -21,11 +21,15 @@
   color: var(--tray-text); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 4px;
   white-space: nowrap;
 }
+.k-open-tracker {
+  justify-self: start; display: inline-flex; align-items: center; min-height: 28px; color: var(--tray-text);
+  font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 4px;
+}
 .k-link-readonly { display: block; min-width: 0; color: var(--tray-text); font-size: 13px; overflow-wrap: anywhere; }
 .k-owner-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
 .k-owner-kind-btn {
   display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px;
-  border: 1px solid var(--tray-line); border-radius: 0; background: transparent; color: var(--tray-text);
+  border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: transparent; color: var(--tray-text);
   font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
 }
 .k-owner-kind-btn.on { border-color: var(--tray-text); background: var(--tray-hover); }
@@ -43,14 +47,14 @@
 .k-labels { display: flex; flex-wrap: wrap; gap: 8px; }
 .k-chip {
   display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 8px;
-  border: 1px solid var(--tray-line); border-radius: 0; background: transparent; color: var(--tray-text);
+  border: 1px solid var(--tray-line); border-radius: var(--radius-xs); background: transparent; color: var(--tray-text);
   font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
 }
 .k-chip:not(:disabled):hover { border-color: var(--tray-text); }
 .k-chip.on { border-color: var(--tray-text); background: var(--tray-text); color: var(--tray); }
 .k-chip:disabled { cursor: default; }
 .k-chip:disabled:not(.on) { display: none; }
-.k-chip-swatch { flex: none; width: 14px; height: 14px; background: var(--c, var(--tray-muted)); box-shadow: inset 0 0 0 1px var(--tray-line); }
+.k-chip-swatch { flex: none; width: 14px; height: 14px; border-radius: var(--radius-xs); background: var(--c, var(--tray-muted)); box-shadow: inset 0 0 0 1px var(--tray-line); }
 .k-chip-name { overflow-wrap: anywhere; }
 .k-empty { margin: 0; color: var(--tray-muted); }
 
@@ -60,7 +64,7 @@
 /* Labels dialog: one row per label (colour, name, tools), rules between them */
 .k-colour-btn {
   display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; min-width: 104px;
-  border: 1px solid var(--tray-line); border-radius: 0; background: transparent; color: var(--tray-text);
+  border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: transparent; color: var(--tray-text);
   font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
 }
 .k-colour-btn:hover { border-color: var(--tray-text); }
@@ -68,7 +72,7 @@
 .popover.k-colour-pop { z-index: 65; padding: 4px; }
 .k-colour-list { display: grid; min-width: 160px; }
 .k-colour-opt {
-  display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border: 0; border-radius: 0;
+  display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border: 0; border-radius: var(--radius-xs);
   background: transparent; color: var(--tray-text); text-align: left; font-weight: 500;
 }
 .k-colour-opt:hover, .k-colour-opt[aria-checked='true'] { background: var(--tray-hover); }
@@ -93,7 +97,7 @@
 .k-label-tools { display: flex; gap: 4px; }
 .k-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
 .k-swatch {
-  width: 28px; height: 28px; padding: 0; border: 1px solid var(--tray-line); border-radius: 0; background: var(--c);
+  width: 28px; height: 28px; padding: 0; border: 1px solid var(--tray-line); border-radius: var(--radius-xs); background: var(--c);
 }
 .k-swatch[aria-checked='true'] { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .k-label-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 16px; }

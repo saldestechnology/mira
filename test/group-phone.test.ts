@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { groupChipAvoidBox } from '../src/ui/group-ui-logic';
 import { placeBar } from '../src/ui/quickbar-layout';
 import { isInSelection, movedPastSlop, sameSelection } from '../src/ui/touch-menu';
+import { contextMenuItems } from '../src/ui/context-menu';
 import type { Obj } from '../src/types';
 
 // TAB-253: groups on phones. CSS is read as text, as tray-overlap.test.ts does.
@@ -90,5 +91,15 @@ describe('long press is wired to the context menu with Group and Ungroup', () =>
     expect(board).toContain('mountTouchMenu(app)');
     expect(read('../src/ui/touch-menu.ts')).toContain('openContextMenu(app,');
     expect(read('../src/ui/context-menu.ts')).toMatch(/action: 'group'[\s\S]*action: 'ungroup'/);
+  });
+});
+
+
+describe('Android long-press menu hints', () => {
+  it('keeps selection actions but hides desktop shortcut hints on touch', () => {
+    const items = contextMenuItems({ count: 2, locked: false, canUngroup: true, touch: true });
+    expect(items.map((item) => item.action)).toContain('group');
+    expect(items.map((item) => item.action)).toContain('ungroup');
+    expect(items.every((item) => item.hint === undefined)).toBe(true);
   });
 });

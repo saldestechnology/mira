@@ -12,13 +12,13 @@
 .ailive-row.changed { flex-wrap: wrap; align-items: flex-start; height: auto; max-width: 300px; row-gap: 2px; }
 /* a long name wraps in the short row instead of running out of the board */
 .ailive-row.changed .ailive-label { flex: 0 1 auto; min-width: 0; height: auto; white-space: normal; overflow-wrap: anywhere; line-height: 16px; padding: 2px 8px; }
-.ailive-note { flex: 1 1 100%; height: auto; padding: 3px 8px; font: 12px/1.3 var(--ui); white-space: normal; pointer-events: none; }
+.ailive-note { flex: 1 1 100%; height: auto; padding: 3px 8px; border-radius: var(--radius-xs); font: 12px/1.3 var(--ui); white-space: normal; pointer-events: none; }
 .ailive-row.wrapped .ailive-label { flex: 0 1 auto; min-width: 0; max-width: 100%; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; }
 .ailive-row.wrapped { flex-direction: column; align-items: flex-start; gap: 0; height: auto; }
-.ailive-label { flex: none; height: 20px; padding: 0 8px; background: var(--c); color: var(--ink); font: 600 11px/20px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.ailive-label { flex: none; height: 20px; padding: 0 8px; border-radius: var(--radius-xs); background: var(--c); color: var(--ink); font: 600 11px/20px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
 .ailive-row.mine .ailive-label { background: var(--signal); color: var(--on-signal); }
 .ailive-tray { display: flex; align-items: center; gap: 2px; height: 24px; padding: 0 2px; pointer-events: auto; }
-.ailive-btn { height: 20px; padding: 0 8px; border: 0; border-radius: 0; background: transparent; color: var(--tray-text); font: 600 11.5px/20px var(--ui); white-space: nowrap; }
+.ailive-btn { height: 20px; padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-text); font: 600 11.5px/20px var(--ui); white-space: nowrap; }
 .ailive-btn:hover { background: var(--tray-hover); }
 .ailive-btn.primary { background: var(--signal); color: var(--on-signal); }
 .ailive-btn.primary:hover { background: color-mix(in srgb, var(--signal) 85%, var(--paper)); }

@@ -1,5 +1,5 @@
 /* The layers panel, a tab of the left drawer. Swiss rules as in the admin dashboard and version history: hairlines, no
-   radius, no shadow, 11px uppercase labels, an 8px grid. --signal is the selected row's left rule and the insertion line
+   tray radius, no added shadow, 11px uppercase labels, an 8px grid. --signal is the selected row's left rule and the insertion line
    and nothing else. Theme variables only. */
 
 .drawer-head h2 .layers-count {
@@ -40,7 +40,7 @@
 
 .layer-tools { flex: none; display: flex; }
 .layer-tool {
-  display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 0; background: transparent;
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent;
   color: var(--tray-muted); visibility: hidden;
 }
 .layer-tool[hidden] { display: none; }
@@ -59,7 +59,7 @@
 .layer-grip { display: none; flex: none; place-items: center; width: 32px; height: 100%; color: var(--tray-muted); touch-action: none; }
 
 .layer-edit {
-  flex: 1 1 auto; min-width: 0; height: 24px; box-sizing: border-box; padding: 0 4px; border: 1px solid var(--tray-text); border-radius: 0;
+  flex: 1 1 auto; min-width: 0; height: 24px; box-sizing: border-box; padding: 0 4px; border: 1px solid var(--tray-text); border-radius: var(--radius-sm);
   background: transparent; color: var(--tray-text); font: inherit; outline: none;
 }
 

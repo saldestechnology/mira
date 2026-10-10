@@ -2,6 +2,7 @@ import './history.css';
 import type { BoardApp } from '../app';
 import type { Obj } from '../types';
 import { ApiError, api, type Version } from '../api';
+import { formatShortcutLabel } from '../shortcuts';
 import { authState } from '../auth';
 import { workspaceOf, cloudErrorMessage } from '../cloud-logic';
 import { Renderer } from '../render';
@@ -36,6 +37,10 @@ function errorText(error: unknown, fallback: string): string {
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+export function restoreSuccessToast(platform: string): string {
+  return `Version restored. Press ${formatShortcutLabel('Ctrl/Cmd+Z', platform)} to undo.`;
+}
 
 /** Version history: a panel with the saved versions and a read-only preview of one (docs/history.md). */
 export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => void } {
@@ -482,7 +487,7 @@ export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => 
     applyRestore(app.store, planNow(p));
     closePreview();
     (document.activeElement as HTMLElement | null)?.blur();
-    toast('Version restored. Press Ctrl+Z to undo.');
+    toast(restoreSuccessToast(typeof navigator === 'undefined' ? '' : navigator.platform));
     window.setTimeout(() => {
       if (panelOpen) void load();
     }, REFRESH_AFTER_RESTORE_MS);

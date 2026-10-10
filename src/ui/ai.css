@@ -1,4 +1,4 @@
-/* AI settings: the "Your AI key" dialog and the AI tab of the admin dashboard. Theme variables only; radius 0, no shadows.
+/* AI settings: the "Your AI key" dialog and the AI tab of the admin dashboard. Theme variables only; dialog and control radius tokens, no shadows.
    Flush-left type, one 2px rule and hairlines, like the tokens dialog and the rest of the dashboard. */
 
 .ai { display: grid; gap: 24px; min-width: 0; }
@@ -45,22 +45,22 @@
 
 /* The "Your AI key" dialog. */
 .ai-dialog {
-  width: min(560px, 100%); border-radius: 0; box-shadow: none;
+  width: min(560px, 100%); border-radius: var(--radius-lg); box-shadow: none;
   border: 1px solid var(--tray-line); border-top: 2px solid var(--tray-text);
 }
 .ai-dialog .modal-head { padding: 16px 16px 8px 24px; }
 .ai-dialog .modal-head h2 { font: 800 20px/1.2 var(--display); letter-spacing: -0.02em; }
-.ai-dialog .icon-btn { border-radius: 0; }
+.ai-dialog .icon-btn { border-radius: var(--radius-sm); }
 .ai-dialog .modal-body { padding: 8px 24px 24px; }
 .ai-dialog .ai-intro, .ai-dialog .ai-state, .ai-dialog .ai-meta { color: var(--tray-muted); }
 .ai-dialog .ai-key { border-top-color: var(--tray-text); border-bottom-color: var(--tray-line); }
-.ai-dialog .input { height: 32px; padding: 0 8px; border-radius: 0; border: 1px solid var(--tray-line); }
+.ai-dialog .input { height: 32px; padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--tray-line); }
 .ai-dialog .input:focus { border-color: var(--tray-text); }
 .ai-dialog :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .ai-dialog .input:focus-visible { outline: none; }
 .ai-dialog .btn-row { gap: 8px; }
 .ai-dialog .btn {
-  height: 32px; padding: 0 12px; border: 1px solid var(--tray-text); border-radius: 0; background: none; color: var(--tray-text);
+  height: 32px; padding: 0 12px; border: 1px solid var(--tray-text); border-radius: var(--radius-sm); background: none; color: var(--tray-text);
   font-size: 13px; font-weight: 600;
 }
 .ai-dialog .btn:not(:disabled):hover { background: var(--tray-text); color: var(--tray); }

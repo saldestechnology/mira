@@ -211,6 +211,9 @@ describe('auditSentence', () => {
       'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
       'volume.adopt',
       'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
+      'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
+      'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
+      'tracker.label.create', 'tracker.milestone.create', 'tracker.milestone.update', 'tracker.project.create', 'tracker.project.update', 'tracker.ticket.archive', 'tracker.ticket.bulk', 'tracker.ticket.comment.delete', 'tracker.ticket.comment.edit', 'tracker.ticket.relate', 'tracker.ticket.restore', 'tracker.ticket.unrelate', 'tracker.view.create', 'tracker.view.delete', 'tracker.view.update',
     ];
     expect([...KNOWN_AUDIT_ACTIONS].sort()).toEqual([...expected].sort());
   });

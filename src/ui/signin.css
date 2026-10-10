@@ -36,14 +36,14 @@
 
 /* Inputs sit inside the 11px label, so the field resets the label's type. */
 .signin .input {
-  height: 44px; padding: 0 10px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink);
+  height: 44px; padding: 0 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink);
   font-size: 14px; font-weight: 400; letter-spacing: normal; text-transform: none;
 }
 .signin .input:focus { border-color: var(--ink); }
 
-/* Buttons: square, 44px. Default is an ink outline that inverts on hover; primary is the one signal fill. */
+/* Buttons: 44px square hit targets with shared-radius corners. Default is an ink outline that inverts on hover; primary is the one signal fill. */
 .signin .btn {
-  width: 100%; height: 44px; padding: 0 12px; border: 1px solid var(--ink); border-radius: 0; background: none; color: var(--ink);
+  width: 100%; height: 44px; padding: 0 12px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: none; color: var(--ink);
   font-size: 13px; font-weight: 600; text-decoration: none;
 }
 .signin .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }

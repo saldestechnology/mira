@@ -50,7 +50,7 @@ export const ROUTES = ['straight', 'elbow', 'curved'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
 export const SIDES = ['top', 'right', 'bottom', 'left'];
 export const OBJ_TYPES = [
-  'shape', 'sticky', 'text', 'frame', 'group', 'icon', 'image', 'path', 'connector', 'container', 'lane', 'card',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'path', 'connector', 'container', 'lane', 'card',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ];
 // names and values of STICKY_COLORS in src/palette.ts (a test keeps them equal)
@@ -256,7 +256,7 @@ export function readAll(doc) {
 }
 
 function rotatedBounds(o) {
-  const angle = o.type === 'container' || o.type === 'lane' || o.type === 'card' ? 0 : Number(o.rotation) || 0;
+  const angle = o.type === 'container' || o.type === 'lane' || o.type === 'card' || o.type === 'tracker' ? 0 : Number(o.rotation) || 0;
   if (!angle) return { x: o.x, y: o.y, w: o.w, h: o.h };
   const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
   const co = Math.cos(angle), si = Math.sin(angle);
@@ -354,6 +354,8 @@ function endOut(end) {
 }
 
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+const TRACKER_FIELD_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const TRACKER_VIEWS = ['inbox', 'my', 'all', 'board', 'projects'];
 
 const PROPOSED_FEATURES = new Set(['generate', 'summarise', 'cluster']);
 /** A stored proposedBy as MCP and the AI read show it: `{ feature, name }`, the name cleaned and cut like other names. */
@@ -382,7 +384,7 @@ export function summarise(o, textMax, detail = false) {
     if (detail) addDetail(out, o);
     return out;
   }
-  const out = { id: id64(o.id), type: str40(o.type), x: r2(o.x), y: r2(o.y), w: r2(o.w), h: r2(o.h), rotation: r2(((Number(o.rotation) || 0) * 180) / Math.PI) };
+  const out = { id: id64(o.id), type: str40(o.type), x: r2(o.x), y: r2(o.y), w: r2(o.w), h: r2(o.h), rotation: o.type === 'tracker' ? 0 : r2(((Number(o.rotation) || 0) * 180) / Math.PI) };
   if (typeof o.kind === 'string') out.kind = str40(o.kind);
   if (typeof o.text === 'string' && o.text) {
     const text = cleanForModel(o.text, textMax);
@@ -391,6 +393,11 @@ export function summarise(o, textMax, detail = false) {
   }
   if (typeof o.name === 'string' && o.name) out.name = cleanForModel(o.name, 200).text;
   if (o.type === 'group' && Number.isInteger(o.members) && o.members >= 0) out.members = o.members;
+  if (o.type === 'tracker') {
+    if (typeof o.trackerId === 'string' && TRACKER_FIELD_RE.test(o.trackerId)) out.trackerId = o.trackerId;
+    if (typeof o.view === 'string' && TRACKER_VIEWS.includes(o.view)) out.view = o.view;
+    if (typeof o.focusKey === 'string' && TRACKER_FIELD_RE.test(o.focusKey)) out.focusKey = o.focusKey;
+  }
   if (o.type === 'image') {
     // A picture is metadata only: its type, its natural size and the description its author gave it. Never its bytes, its
     // hash or any URL to it (docs/images.md, MCP and the other AI tools); what is in it is not read.
@@ -458,7 +465,7 @@ function decodeCursor(cursor) {
   throw invalid('cursor', 'The cursor is not valid. Start again without one.');
 }
 
-const keyOf = (o) => [o.type === 'frame' ? 0 : 1, zOf(o), o.id];
+const keyOf = (o) => [o.type === 'frame' || o.type === 'tracker' ? 0 : 1, zOf(o), o.id];
 const cmpKey = (a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0);
 
 const touches = (o, b) => !(o.x > b.x + b.w || o.x + o.w < b.x || o.y > b.y + b.h || o.y + o.h < b.y);
@@ -1189,6 +1196,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
   const entries = list.map((item, i) => {
     const path = `objects[${i}]`;
     if (!isRecord(item)) throw invalid(path, 'Must be an object');
+    if (item.type === 'tracker') throw invalid(at(path, 'type'), 'Tracker frames can only be created by the app');
     const type = choice(item.type, Object.keys(CREATE_KEYS), at(path, 'type'));
     record(item, path, CREATE_KEYS[type]);
     const id = freshId();

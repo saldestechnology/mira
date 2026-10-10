@@ -5,7 +5,7 @@ import { createMeRefresher, meChanged, type MeRefreshDeps } from './cloud-logic'
 export type AuthState =
   | { mode: 'unknown' }
   | { mode: 'open' }
-  | { mode: 'guest'; guest: GuestJoin }
+  | { mode: 'guest'; guest: GuestSession }
   | { mode: 'signed-out' }
   | { mode: 'signed-in'; me: Me }
   | { mode: 'offline'; me: Me | null };
@@ -13,6 +13,11 @@ export type AuthState =
 const ME_KEY = 'driftboard:me';
 const BOARDS_KEY = 'driftboard:server-boards';
 const GUEST_KEY = 'driftboard:guest-session';
+
+export interface GuestSession extends GuestJoin {
+  /** A terminal relay refusal or a locally observed expiry; retained so reloads stay view-only. */
+  ended?: boolean;
+}
 
 let state: AuthState = { mode: 'unknown' };
 let joinCodesEnabled = false;
@@ -22,17 +27,26 @@ export function authState(): AuthState {
   return state;
 }
 
+/** Whether the existing /api/me answer identifies this instance as hosted (docs/images.md). */
+export function isHostedWorkspace(s: AuthState = state): boolean {
+  return (s.mode === 'signed-in' || s.mode === 'offline') && s.me?.workspace !== undefined;
+}
+
 export function joinCodesAvailable(): boolean {
   return joinCodesEnabled;
 }
 
-function readGuestSession(): GuestJoin | null {
+function readGuestSession(): GuestSession | null {
   try {
     const raw = typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(GUEST_KEY);
     if (!raw) return null;
-    const value = JSON.parse(raw) as GuestJoin;
+    const value = JSON.parse(raw) as GuestSession;
     if (!value || typeof value.boardId !== 'string' || typeof value.guestId !== 'string' || typeof value.name !== 'string'
-      || (value.role !== 'editor' && value.role !== 'commenter') || !Number.isFinite(value.expiresAt) || value.expiresAt <= Date.now()) return null;
+      || (value.role !== 'editor' && value.role !== 'commenter') || !Number.isFinite(value.expiresAt)) return null;
+    if (value.ended !== true && value.expiresAt <= Date.now()) {
+      value.ended = true;
+      try { sessionStorage.setItem(GUEST_KEY, JSON.stringify(value)); } catch { /* keep the terminal state in memory */ }
+    }
     return value;
   } catch {
     return null;
@@ -137,7 +151,10 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
     const cached = readJson<Me>(ME_KEY);
     return commit(cached ? { mode: 'offline', me: cached } : { mode: 'open' });
   }
-  if (!authEnabled) return commit({ mode: 'open' });
+  if (!authEnabled) {
+    clearGuestSession();
+    return commit({ mode: 'open' });
+  }
 
   try {
     const me = await a.me();
@@ -146,7 +163,13 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
     return commit({ mode: 'signed-in', me });
   } catch (err) {
     const guest = readGuestSession();
-    if (guest && err instanceof ApiError && (err.status === 403 || err.status === 0)) return commit({ mode: 'guest', guest });
+    if (guest) {
+      if (err instanceof ApiError && err.status === 401) {
+        guest.ended = true;
+        try { sessionStorage.setItem(GUEST_KEY, JSON.stringify(guest)); } catch { /* retain terminal state in memory */ }
+      }
+      return commit({ mode: 'guest', guest });
+    }
     if (err instanceof ApiError && err.status === 401) {
       setSignedOut();
       return authState();
@@ -211,18 +234,35 @@ export function setSignedIn(me: Me) {
 
 export function setGuest(guest: GuestJoin) {
   forgetCaches();
+  const session: GuestSession = { ...guest };
+  delete session.ended;
   try {
-    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(GUEST_KEY, JSON.stringify(guest));
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(GUEST_KEY, JSON.stringify(session));
   } catch {
     /* storage is unavailable: this tab can still open the joined board until it reloads */
   }
-  commit({ mode: 'guest', guest });
+  commit({ mode: 'guest', guest: session });
 }
 
-export function setSignedOut() {
+/** Mark only the guest session whose relay connection was refused; a later join has a different guestId. */
+export function markGuestSessionEnded(expectedGuestId: string): boolean {
+  if (state.mode !== 'guest' || state.guest.guestId !== expectedGuestId || state.guest.ended) return false;
+  const guest: GuestSession = { ...state.guest, ended: true };
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(GUEST_KEY, JSON.stringify(guest));
+  } catch { /* retain terminal state in memory */ }
+  commit({ mode: 'guest', guest });
+  return true;
+}
+
+export function leaveGuestSession() {
   clearGuestSession();
   forgetCaches();
   commit({ mode: 'signed-out' });
+}
+
+export function setSignedOut() {
+  leaveGuestSession();
 }
 
 export function cacheServerBoards(list: ServerBoard[]) {

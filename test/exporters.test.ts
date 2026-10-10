@@ -241,11 +241,13 @@ describe('PNG card links', () => {
 });
 
 describe('group export gathering', () => {
-  it('carries nested group members and internal connectors through SVG, PNG, selected JSON and .drift', async () => {
+  it('carries visible nested group members through selected exports and preserves the full .drift board', async () => {
     const { exporters } = await setup(async () => { throw new Error('unexpected font request'); });
     const app = appWithNestedGroup();
     const selected = exporters.toJson(app, ['outer'], [], { leaveOutWithheld: false }).objects;
-    expect(selected.map((o) => o.id)).toEqual(expect.arrayContaining(['frame', 'outer', 'inner', 'member', 'other', 'internal-line']));
+    expect(selected.map((o) => o.id)).toEqual(['outer', 'inner', 'member']);
+    expect(selected.map((o) => o.id)).not.toContain('frame');
+    expect(selected.find((o) => o.id === 'outer')).not.toHaveProperty('parent');
     expect(selected.map((o) => o.id)).not.toContain('outside-line');
     expect(selected.find((o) => o.id === 'member')?.parent).toBe('inner');
 

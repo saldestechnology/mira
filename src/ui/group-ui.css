@@ -26,7 +26,7 @@
   box-sizing: border-box;
   height: 20px;
   border: 1px solid var(--group-chip-line);
-  border-radius: 0;
+  border-radius: var(--radius-xs);
   background: var(--group-chip-bg);
   color: var(--group-chip-ink);
   font: 600 11px/1 Switzer, system-ui, sans-serif;

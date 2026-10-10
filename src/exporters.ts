@@ -53,9 +53,16 @@ export function withCleanProposedBy<T extends Obj>(o: T): T {
  */
 export function toJson(app: BoardApp, ids?: Id[], comments: Thread[] = app.conn.comments.list(), opts: { leaveOutWithheld?: boolean } = {}): BoardJson {
   const all = ids ? gatherForSnapshot(app, ids) : app.store.ordered();
+  const selectedIds = ids ? new Set(all.map((o) => o.id)) : null;
   // A container's lanes and cards have no positions of their own, so the copy carries the laid-out ones.
   const objs = (opts.leaveOutWithheld ? leaveOutWithheld(all, app.flow) : all)
-    .map((o) => withCleanProposedBy(o.type === 'group' ? o : app.store.placed(o)));
+    .map((o) => {
+      const clean = withCleanProposedBy(o.type === 'group' ? o : app.store.placed(o));
+      if (!selectedIds || !clean.parent || selectedIds.has(clean.parent)) return clean;
+      const detached = { ...clean };
+      delete detached.parent;
+      return detached;
+    });
   if (opts.leaveOutWithheld) comments = threadsWithoutWithheld(app, comments);
   const json: BoardJson = {
     format: 'driftboard',
@@ -373,41 +380,33 @@ function gatherForExport(app: BoardApp, ids: Id[]): Obj[] {
     const z = c.to.kind === 'free' || set.has(c.to.id);
     if (a && z && (c.from.kind === 'bound' || c.to.kind === 'bound')) set.add(o.id);
   }
-  // hidden objects (TAB-198) are left out of pictures, as on the canvas; JSON and .drift keep them
+  // Hidden objects (TAB-198) are left out of pictures, as on the canvas; whole-board JSON and .drift keep them.
   return app.store.shown().filter((o) => set.has(o.id));
 }
 
-/** A selected JSON snapshot keeps hidden board objects, while carrying the selected frame/group/container subtree. */
+/** A selected JSON snapshot carries shown objects in the selected subtree, except notes private writing hides from this person. */
 function gatherForSnapshot(app: BoardApp, ids: Id[]): Obj[] {
-  const set = new Set(ids.filter((id) => app.store.get(id)));
+  const visible = new Map(app.store.shown()
+    .filter((o) => !isWithheld(o, app.flow))
+    .map((o) => [o.id, o]));
+  const set = new Set(ids.filter((id) => visible.has(id)));
   const stack = [...set];
   while (stack.length) {
     const id = stack.pop()!;
-    const type = app.store.get(id)?.type;
+    const type = visible.get(id)?.type;
     if (type !== 'frame' && type !== 'group' && type !== 'container' && type !== 'lane') continue;
     for (const child of app.store.childrenOf(id)) {
-      if (child.parent !== id || set.has(child.id)) continue;
+      if (child.parent !== id || set.has(child.id) || !visible.has(child.id)) continue;
       set.add(child.id);
       stack.push(child.id);
     }
   }
-  for (const id of ids) {
-    const seen = new Set<Id>([id]);
-    let parent = app.store.get(id)?.parent;
-    while (parent && !seen.has(parent)) {
-      seen.add(parent);
-      const ancestor = app.store.get(parent);
-      if (!ancestor) break;
-      set.add(parent);
-      parent = ancestor.parent;
-    }
-  }
   for (const id of set) {
-    const o = app.store.get(id);
+    const o = visible.get(id);
     if (isConnector(o) && [o.from, o.to].some((end) => end.kind === 'bound' && !set.has(end.id))) set.delete(id);
   }
-  for (const o of app.store.cache.values()) {
-    if (o.type !== 'connector' || set.has(o.id)) continue;
+  for (const o of visible.values()) {
+    if (!isConnector(o) || set.has(o.id)) continue;
     const c = o as Extract<Obj, { type: 'connector' }>;
     if (c.from.kind === 'bound' && c.to.kind === 'bound' && set.has(c.from.id) && set.has(c.to.id)) set.add(o.id);
   }

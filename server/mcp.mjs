@@ -1535,10 +1535,18 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         const ticket = getTicket({ directory, actor: owner, key });
         const db = directory.db;
         const comments = db.prepare(
-          `SELECT id, author_snapshot, body, created_at
-             FROM ticket_comments WHERE ticket_id = ? AND deleted_at IS NULL
+          `SELECT id, actor_type, author_snapshot, body, created_at, edited_at, deleted_at
+             FROM ticket_comments WHERE ticket_id = ?
             ORDER BY created_at DESC, id DESC LIMIT 50`,
-        ).all(ticket.id).reverse().map((row) => ({ id: row.id, author: row.author_snapshot, body: row.body, createdAt: row.created_at }));
+        ).all(ticket.id).reverse().map((row) => ({
+          id: row.id,
+          author: row.author_snapshot,
+          ...(row.deleted_at == null ? { body: row.body } : {}),
+          createdAt: row.created_at,
+          edited: row.edited_at != null,
+          deleted: row.deleted_at != null,
+          actorType: row.actor_type === 'mcp_token' ? 'agent' : ['user', 'integration', 'import', 'system'].includes(row.actor_type) ? row.actor_type : 'system',
+        }));
         const events = db.prepare(
           `SELECT id, event_type, schema_version, actor_type, actor_id, source, created_at, before_json, after_json, details_json
              FROM ticket_events WHERE ticket_id = ? ORDER BY id DESC LIMIT 50`,

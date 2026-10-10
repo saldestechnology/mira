@@ -133,7 +133,7 @@ interface MenuItem {
   run: () => void;
 }
 
-/** The ⋯ button of a card, with a square popover of actions. */
+/** The ⋯ button of a card, with a compact popover of actions. */
 function moreButton(name: string, items: MenuItem[]): HTMLButtonElement {
   const more: HTMLButtonElement = h('button', {
     class: 'icon-btn', 'data-tip': 'More actions', 'aria-label': `More actions for ${name}`, 'aria-haspopup': 'menu',

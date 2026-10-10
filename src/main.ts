@@ -30,16 +30,29 @@ import { toast } from './ui/common';
 import { commentNoticeText } from './comments';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, onRestoring, type ServerBoard } from './api';
-import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
+import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, isHostedWorkspace, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
+import { applyConnectionAccess, denialForGuestSession, GUEST_ENDED_BANNER, guestAccessEnded, watchGuestAccess } from './guest-access';
 import { createWorkspaceBanner } from './ui/workspace';
 import { installTooltips } from './ui/tooltip';
-import { needsSignIn, parseRoute, resolveRoute, returnHash } from './route';
+import {
+  dispatchTrackerRoute,
+  navigateTrackerPath,
+  needsSignIn,
+  onTrackerRoute,
+  resolveRoute,
+  resolvedTrackerDestination,
+  returnDestination,
+  safeReturnDestination,
+} from './route';
 import { isDesktop } from './desktop-env';
 import type { Desktop } from './desktop';
 import { seedDemo } from './demo/seed';
 import { mountDemoBanner } from './ui/demo-banner';
 import type { User } from './types';
+import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from './tracker-data';
+import { mountTrackerShell, trackerViewerState } from './tracker/ui/shell';
+import type { TrackerView } from './tracker-types';
 import './ui/touch.css';
 
 // `demo.ts` is evaluated before these imports so its storage/network shims protect module initializers too.
@@ -52,6 +65,9 @@ if (!DEMO) onRestoring(() => showRestoring());
 const RETURN_KEY = 'driftboard:return';
 
 const root = document.getElementById('app')!;
+const trackerFoundationVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).get('debug') === 'tracker-foundation';
+const trackerMockVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).has('debug') && new URLSearchParams(location.search).get('trackerMock') === '1';
+const trackerBoardMockVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).has('debug') && new URLSearchParams(location.search).get('trackerMock') === 'board';
 let current: BoardApp | null = null;
 let releaseBanner: (() => void) | null = null;
 let releaseWorkspace: (() => void) | null = null;
@@ -59,6 +75,10 @@ let pending: { id: string; template?: string; custom?: CustomTemplate; imported?
 let registering = false;
 let desktop: Desktop | null = null;
 let routeSeq = 0;
+let currentBoardId: string | null = null;
+let preservedBoardId: string | null = null;
+let trackerRouteApi: TrackerApi | null = null;
+let trackerRouteStore: TrackerStore | null = null;
 /** What to call when the page on screen is left (the Chat page closes its conversation and its listeners). */
 let leavePage: (() => void) | null = null;
 let demoOpened = false;
@@ -66,7 +86,7 @@ let demoOpened = false;
 const demoUser: User = { id: 'tabula-demo', name: 'Demo user', color: '#2F6FED' };
 
 function saveReturn(hash: string) {
-  const target = returnHash(hash);
+  const target = returnDestination(hash, location.pathname, location.search);
   if (!target) return;
   try {
     sessionStorage.setItem(RETURN_KEY, target);
@@ -83,13 +103,18 @@ function takeReturn(): string {
   } catch {
     /* storage is unavailable */
   }
-  return (saved && returnHash(saved)) || '#/';
+  return (saved && safeReturnDestination(saved)) || '#/';
 }
 
 /** Leaves the sign-in screens: drops the emailed token from the address bar and goes where the user was headed. */
 function finishSignIn() {
+  const target = takeReturn();
+  if (target.startsWith('/')) {
+    location.replace(target);
+    return;
+  }
   history.replaceState(null, '', location.pathname + location.search);
-  location.hash = takeReturn();
+  location.hash = target;
 }
 
 async function refreshBoardCache() {
@@ -102,6 +127,72 @@ async function refreshBoardCache() {
 
 const isNewBoard = (id: string, opts: { template?: string; imported?: ImportedBoard; teamId?: string }) =>
   Boolean(opts.teamId || opts.template || opts.imported) || !cachedServerBoards().some((b) => b.id === id);
+
+function trackerEnabled(auth: AuthState): boolean {
+  return (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+}
+
+function replaceResolvedTrackerPath(target: import('./tracker-route').TrackerPathRoute, resolvedKey: string | undefined) {
+  if (!resolvedKey) return;
+  const path = resolvedTrackerDestination(target, resolvedKey);
+  if (path && path !== location.pathname + location.search) history.replaceState(null, '', path);
+}
+
+function registerTrackerRouteHost(): () => void {
+  return onTrackerRoute(async (target) => {
+    if (target.kind === 'board-position') return;
+    const auth = authState();
+    if (!trackerEnabled(auth) && !trackerBoardMockVisual) return;
+    const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
+    if (!me && !trackerBoardMockVisual) return;
+
+    const viewerId = me?.user.id ?? 'visual-user';
+    if (!trackerRouteApi) {
+      if (trackerBoardMockVisual) {
+        const [mock, seed] = await Promise.all([import('./tracker-mock'), import('./tracker/ui/visual-seed')]);
+        trackerRouteApi = mock.createMockTrackerApi(seed.createTrackerVisualSeed());
+      } else trackerRouteApi = createHttpTrackerApi();
+    }
+    trackerRouteStore ??= createTrackerStore(trackerRouteApi);
+    const store = trackerRouteStore;
+    const view = target.kind === 'ticket' ? 'all' : target.view === 'views' ? 'all' : target.view;
+    const viewId = target.kind === 'view' ? target.id : undefined;
+    const key = target.kind === 'ticket' ? target.key : null;
+    const state = trackerViewerState(store, viewerId, 'workspace', view as TrackerView);
+    state.tab = view as TrackerView;
+    state.viewId = viewId ?? null;
+    state.ticketKey = key;
+
+    const host = document.createElement('div');
+    host.className = 'trk-route-root';
+    document.body.appendChild(host);
+    const shell = mountTrackerShell(host, {
+      store, api: trackerRouteApi, viewerId, trackerId: 'workspace', windowId: 'workspace',
+      initialTab: view as TrackerView, initialViewId: viewId, initialTicketKey: key ?? undefined,
+      fullScreen: true, boardName: 'Tracker', layoutWidth: window.innerWidth,
+      onFullscreenChange: (fullScreen) => { if (!fullScreen) history.back(); },
+      onTabChange: (tab, nextViewId) => {
+        navigateTrackerPath(nextViewId
+          ? { kind: 'view', view: tab === 'projects' ? 'projects' : 'views', id: nextViewId }
+          : { kind: 'view', view: tab }, 'replace');
+      },
+      onTicketChange: (nextKey) => {
+        if (nextKey) navigateTrackerPath({ kind: 'ticket', key: nextKey });
+        else history.back();
+      },
+    });
+    let resolvedKey: string | undefined;
+    if (key) {
+      try {
+        const detail = await store.loadTicket(key, true);
+        resolvedKey = detail.resolvedKey ?? detail.ticket.key;
+      } catch {
+        // The mounted shell renders the same missing or inaccessible state as a ticket opened from its list.
+      }
+    }
+    return { ...(resolvedKey ? { resolvedKey } : {}), dispose: () => { shell.destroy(); host.remove(); } };
+  });
+}
 
 const nav: HomeNav = {
   open: async (id, opts = {}) => {
@@ -153,7 +244,7 @@ async function boardRole(id: string, auth: AuthState): Promise<ServerBoard['role
 
 /** The user as the board shows them: in accounts mode the account's name on this device's identity. */
 function boardUser(auth: AuthState) {
-  if (auth.mode === 'guest') return { ...getUser(), id: auth.guest.guestId, name: auth.guest.name };
+  if (auth.mode === 'guest') return { ...getUser(), id: auth.guest.guestId, name: auth.guest.name, guest: true };
   const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
   return me ? { ...getUser(), name: me.user.name } : getUser();
 }
@@ -178,7 +269,7 @@ async function routeTemplateEdit(id: string, auth: AuthState, seq: number) {
   const conn = scratchBoard(`template-${tpl.id}`, user);
   loadTemplate(conn.store, tpl, user.id);
   root.replaceChildren();
-  const app = new BoardApp(conn, user, root);
+  const app = new BoardApp(conn, user, root, isHostedWorkspace(auth));
   current = app;
   if (!DEMO && location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
   mountTemplateEditor(app, root, tpl);
@@ -229,17 +320,40 @@ async function route() {
   }
   shownHash = location.hash;
   const seq = ++routeSeq;
-  releaseBanner?.();
-  releaseBanner = null;
-  releaseWorkspace?.();
-  releaseWorkspace = null;
-  current?.destroy();
-  current = null;
-  leavePage?.();
-  leavePage = null;
-
   const auth = authState();
   const r = resolveRoute(location.hash, auth.mode, location.pathname, location.search);
+  const trackerScreen = r.name === 'tracker' && (trackerEnabled(auth) || trackerBoardMockVisual);
+  const keepTrackerStore = trackerScreen;
+  const preserveBoard = trackerScreen && current !== null && currentBoardId !== null;
+  const restoreBoard = r.name === 'board' && current !== null && currentBoardId === r.id && preservedBoardId === r.id;
+  if (preserveBoard) {
+    preservedBoardId = currentBoardId;
+    leavePage?.();
+    leavePage = null;
+  } else if (restoreBoard) {
+    leavePage?.();
+    leavePage = null;
+    preservedBoardId = null;
+    trackerRouteStore?.destroy();
+    trackerRouteStore = null;
+    trackerRouteApi = null;
+  } else {
+    releaseBanner?.();
+    releaseBanner = null;
+    releaseWorkspace?.();
+    releaseWorkspace = null;
+    current?.destroy();
+    current = null;
+    currentBoardId = null;
+    preservedBoardId = null;
+    leavePage?.();
+    leavePage = null;
+    if (!keepTrackerStore) {
+      trackerRouteStore?.destroy();
+      trackerRouteStore = null;
+      trackerRouteApi = null;
+    }
+  }
   if (auth.mode === 'guest' && (r.name !== 'board' || r.id !== auth.guest.boardId)) {
     location.replace(`/#/b/${encodeURIComponent(auth.guest.boardId)}`);
     return;
@@ -251,6 +365,33 @@ async function route() {
   if (needsSignIn(r, auth.mode)) {
     saveReturn(location.hash);
     location.replace('#/signin');
+    return;
+  }
+
+  // Tracker paths share the same public app shell as boards. Feature access is decided from /api/me, and ticket
+  // existence/access is left to the tracker data call so the shell never distinguishes those cases.
+  if (r.name === 'tracker' && !trackerEnabled(auth) && !trackerBoardMockVisual) {
+    root.className = 'home-root';
+    renderHome(root, nav, auth);
+    return;
+  }
+
+  if (r.name === 'tracker') {
+    if (!preserveBoard) {
+      root.className = 'home-root';
+      root.replaceChildren();
+    }
+    try {
+      const handled = await dispatchTrackerRoute(r.target);
+      if (seq !== routeSeq) {
+        handled?.dispose?.();
+        return;
+      }
+      leavePage = handled?.dispose ?? null;
+      replaceResolvedTrackerPath(r.target, handled?.resolvedKey);
+    } catch {
+      // The registered tracker screen owns its loading and access errors; the route stays a safe empty shell.
+    }
     return;
   }
 
@@ -301,7 +442,22 @@ async function route() {
     return;
   }
 
+  if (restoreBoard) {
+    if (r.trackerPosition && (trackerEnabled(auth) || auth.mode === 'guest')) {
+      const target = { kind: 'board-position' as const, boardId: r.id, ...r.trackerPosition };
+      try {
+        const handled = await dispatchTrackerRoute(target);
+        if (seq !== routeSeq) { handled?.dispose?.(); return; }
+        replaceResolvedTrackerPath(target, handled?.resolvedKey);
+      } catch {
+        // The restored board stays usable if the tracker frame cannot open.
+      }
+    }
+    return;
+  }
+
   const id = r.id;
+  const guestIdAtOpen = auth.mode === 'guest' ? auth.guest.guestId : null;
   root.className = 'board-root';
   root.replaceChildren(Object.assign(document.createElement('div'), { className: 'loading', textContent: 'Opening board…' }));
   const accounts = auth.mode === 'signed-in' || auth.mode === 'offline';
@@ -316,14 +472,19 @@ async function route() {
   // When a locked workspace becomes writable again the board reconnects, so what was typed while the relay dropped it is sent.
   const watchUnlock = createUnlockWatcher(() => conn.resync());
   // The role and, on a hosted workspace, the workspace's read-only switch decide together; a new /api/me re-decides.
+  const denialForCurrentGuest = () => {
+    const currentAuth = authState();
+    return denialForGuestSession(guestIdAtOpen, currentAuth, conn.denied);
+  };
   const applyAccess = () => {
-    const workspace = workspaceOf(authState());
+    const currentAuth = authState();
+    const workspace = workspaceOf(currentAuth);
     const access = boardAccess(role, workspace, deleted, conn.store.unsupportedFeatures().length > 0);
-    conn.store.setReadOnly(access.storeReadOnly);
-    conn.comments.setReadOnly(access.commentsReadOnly);
+    applyConnectionAccess(conn, access, currentAuth, denialForCurrentGuest());
     watchUnlock(workspace);
   };
   applyAccess();
+  const unwatchGuestAccess = watchGuestAccess(conn, guestIdAtOpen, applyAccess);
   // A feature this client lacks can arrive with a remote change, an import or a restore: the board turns read-only then too.
   // Watching starts before the import below, which writes the board's meta.
   const unwatchFeatures = watchFeatureGate(conn.store, applyAccess);
@@ -336,23 +497,26 @@ async function route() {
   }
 
   root.replaceChildren();
-  const app = new BoardApp(conn, user, root);
+  const app = new BoardApp(conn, user, root, isHostedWorkspace(auth));
   app.role = role ?? null;
   app.deleted = deleted;
   current = app;
+  currentBoardId = id;
   desktop?.watchBoard(app);
   // Inspection handle for automated tests and debugging (?debug in the URL). `__kanban` lets a seed store card heights
   // the way the app does (scripts/visual-check.mjs).
   if (!DEMO && location.search.includes('debug')) Object.assign(window, { __board: app, __kanban: { cardContentHeight } });
   // the pictures of an imported board file go to this board's asset store in the background
   if (job?.imported?.assets) void app.images.adopt(job.imported.assets);
-  mountBoardUi(app, root, { home: () => (location.hash = '#/') });
-  const banner = createWorkspaceBanner((visible) => root.classList.toggle('has-banner', visible));
+  mountBoardUi(app, root, { home: () => (location.hash = '#/') }, { trackerId: r.trackerPosition?.trackerId, ticketKey: r.trackerPosition?.key, guestId: guestIdAtOpen ?? undefined });
+  const banner = createWorkspaceBanner(
+    (visible) => root.classList.toggle('has-banner', visible),
+    () => guestAccessEnded(authState(), denialForCurrentGuest()) ? GUEST_ENDED_BANNER : null,
+  );
   root.appendChild(banner.el);
   // the banner wraps at large text sizes; the editing chrome sits below its real height
   const bannerSize = new ResizeObserver(() => root.style.setProperty('--banner-h', `${Math.ceil(banner.el.getBoundingClientRect().height)}px`));
   bannerSize.observe(banner.el);
-  const unsubscribe = onAuth(applyAccess);
   const releaseNewer = mountNewerBanner(conn.store, root);
   // The relay says the read-only switch flipped: ask /api/me now instead of at the next five minute refresh.
   const unhint = conn.onWorkspaceHint(refreshMeSoon);
@@ -360,8 +524,8 @@ async function route() {
   const unnotice = conn.onCommentNotice((undone) => toast(commentNoticeText(undone)));
   releaseWorkspace = () => {
     unwatchFeatures();
+    unwatchGuestAccess();
     releaseNewer();
-    unsubscribe();
     unhint();
     unnotice();
     banner.dispose();
@@ -399,6 +563,21 @@ async function route() {
     requestAnimationFrame(() => app.zoomToFit());
     toast('Board opened from file');
   }
+
+  if (r.trackerPosition && (trackerEnabled(auth) || auth.mode === 'guest')) {
+    const target = { kind: 'board-position' as const, boardId: id, ...r.trackerPosition };
+    try {
+      const handled = await dispatchTrackerRoute(target);
+      if (seq !== routeSeq) {
+        handled?.dispose?.();
+        return;
+      }
+      leavePage = handled?.dispose ?? null;
+      replaceResolvedTrackerPath(target, handled?.resolvedKey);
+    } catch {
+      // The board stays usable if a tracker route handler cannot open its ticket.
+    }
+  }
 }
 
 async function boot() {
@@ -410,6 +589,7 @@ async function boot() {
   }
   // Open mode (no accounts, or no server to ask) resolves at once and routes exactly as before.
   await initAuth();
+  registerTrackerRouteHost();
   startMeRefresh();
   // the cards for mentions in channels you are not looking at, while chat is on for this person
   let stopMentions: (() => void) | null = null;
@@ -427,7 +607,10 @@ async function boot() {
   };
   syncMentions();
   onAuth((s) => {
-    if (needsSignIn(parseRoute(location.hash), s.mode)) location.replace('#/signin');
+    if (needsSignIn(resolveRoute(location.hash, s.mode, location.pathname, location.search), s.mode)) {
+      saveReturn(location.hash);
+      location.replace('#/signin');
+    }
     syncMentions();
   });
   if (!DEMO && isDesktop()) {
@@ -444,9 +627,29 @@ async function boot() {
   once.handle();
 }
 
-if (!DEMO) loadCatalogue();
-boot();
+if (trackerMockVisual) {
+  root.className = 'trk-route-root';
+  root.replaceChildren();
+  void Promise.all([import('./tracker-mock'), import('./tracker/ui/visual-seed')]).then(([mock, seed]) => {
+    const api = mock.createMockTrackerApi(seed.createTrackerVisualSeed());
+    const store: TrackerStore = createTrackerStore(api);
+    const shell = mountTrackerShell(root, {
+      store, api, viewerId: 'visual-user', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true,
+      onTabChange: (tab) => { navigateTrackerPath({ kind: 'view', view: tab }, 'replace'); },
+      onTicketChange: (key) => {
+        if (key) navigateTrackerPath({ kind: 'ticket', key });
+        else history.back();
+      },
+    });
+    Object.assign(window, { __trackerStore: store, __trackerShell: shell });
+  });
+} else if (trackerFoundationVisual) {
+  void import('./tracker/ui/gallery').then(({ mountTrackerGallery }) => mountTrackerGallery(root));
+} else {
+  if (!DEMO) loadCatalogue();
+  boot();
+}
 
-if (!DEMO && import.meta.env.PROD && 'serviceWorker' in navigator && !isDesktop() && location.protocol.startsWith('http')) {
+if (!DEMO && !trackerFoundationVisual && !trackerMockVisual && import.meta.env.PROD && 'serviceWorker' in navigator && !isDesktop() && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('/sw.js').catch(() => undefined);
 }

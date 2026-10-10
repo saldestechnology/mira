@@ -47,6 +47,8 @@ describe('tracker key allocation', () => {
       throw new Error('force outer rollback');
     })).toThrow('force outer rollback');
     expect(directory.db.prepare('SELECT COUNT(*) AS n FROM tickets').get()).toEqual({ n: 0 });
+    expect(directory.db.prepare('SELECT COUNT(*) AS n FROM ticket_subscriptions').get()).toEqual({ n: 0 });
+    expect(directory.db.prepare('SELECT COUNT(*) AS n FROM notifications').get()).toEqual({ n: 0 });
     expect(createTicket({ directory, actor, title: 'Committed' }).key).toBe('TAB-1');
   });
 

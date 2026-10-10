@@ -271,11 +271,13 @@ describe('the boards of one backup', () => {
 
   it('is not allowed while a restore is running', async () => {
     let open!: (v: { ok: boolean }) => void;
+    let enterRun!: () => void;
     const held = new Promise<{ ok: boolean }>((resolve) => (open = resolve));
+    const entered = new Promise<void>((resolve) => (enterRun = resolve));
     const s = await scenario();
-    const r = rig(h, { backup: { ...h.engine(), runNow: () => held } });
+    const r = rig(h, { backup: { ...h.engine(), runNow: () => { enterRun(); return held; } } });
     const whole = r.restore.restoreWorkspace({ manifest: s.manifest, confirm: 'RESTORE', actor: s.actor });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await entered;
     expect((await failure(r.restore.listBoardsInBackup(s.manifest, s.actor))).code).toBe('restore_in_progress');
     open({ ok: false });
     await failure(whole);

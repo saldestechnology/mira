@@ -103,9 +103,11 @@ describe('the relay restoring a workspace', () => {
 
     // someone is editing a board: the room has changes that are not on disk yet
     const editor = c.connect('b1', cookie);
+    const observer = c.connect('b1', cookie);
     await until(() => editor.provider.wsconnected && editor.provider.synced);
+    await until(() => observer.provider.wsconnected && observer.provider.synced);
     editor.doc.getMap('objects').set('live-edit', 'typed while the restore starts');
-    await sleep(100);
+    await until(() => observer.doc.getMap('objects').get('live-edit') === 'typed while the restore starts');
     const watcher = c.connect('b2', cookie);
     await until(() => watcher.provider.wsconnected && watcher.provider.synced);
 
@@ -118,8 +120,9 @@ describe('the relay restoring a workspace', () => {
     expect(res.body).toEqual({ ok: true, restarting: true, keepOldFor: '7 days' });
 
     // the window between the response and the exit: maintenance mode
-    await until(() => editor.closes.length > 0 && watcher.closes.length > 0);
+    await until(() => editor.closes.length > 0 && observer.closes.length > 0 && watcher.closes.length > 0);
     expect(editor.closes).toContain(4503);
+    expect(observer.closes).toContain(4503);
     expect(watcher.closes).toContain(4503);
     const late = c.listen('b1', cookie);
     await until(() => late.length > 0);
@@ -202,9 +205,9 @@ describe('the relay restoring a workspace', () => {
     const cookie = await c.signIn('owner@example.com');
     const res = await c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: s.manifest, confirm: 'no' });
     expect(res.status).toBe(400);
+    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
     await sleep(200);
     expect(relay.proc.exitCode).toBeNull();
-    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
   }, 30_000);
 });
 

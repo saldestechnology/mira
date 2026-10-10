@@ -1,7 +1,7 @@
-/* Number fields and comboboxes on trays (the properties panel). Square, theme variables only; the box matches
-   .input so it lines up with the other fields. */
+/* Number fields and comboboxes on trays (the properties panel). Shared 8px control radius, theme variables only; the box
+   matches .input so it lines up with the other fields. */
 
-.num-field, .combo { border-radius: 0; }
+.num-field, .combo { border-radius: var(--radius-sm); }
 .num-field { font-variant-numeric: tabular-nums; cursor: ns-resize; }
 .num-field:focus { cursor: text; border-color: var(--tray-text); outline: none; }
 .num-field::placeholder { color: var(--tray-muted); }
@@ -21,7 +21,7 @@
 
 .combo-list {
   position: fixed; z-index: 80; margin: 0; padding: 4px 0; list-style: none; max-height: min(360px, 60vh, calc(100vh - 16px - var(--safe-top) - var(--safe-bottom))); overflow-y: auto;
-  border-radius: 0; background: var(--tray); color: var(--tray-text); color-scheme: dark;
+  border-radius: var(--radius-md); background: var(--tray); color: var(--tray-text); color-scheme: dark;
   box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent);
   font-size: 14px;
 }

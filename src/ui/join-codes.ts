@@ -122,10 +122,19 @@ export function mountJoinCodes(boardId: string): HTMLElement {
     create.disabled = false;
     create.textContent = 'Create code';
     render();
-    // the code is shown once: on a phone the modal scrolls, so bring it into view and put focus on Copy code
     const created = section.querySelector<HTMLElement>('.join-code-created');
-    created?.scrollIntoView?.({ block: 'center' });
-    created?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
+    const copyCode = created?.querySelector<HTMLButtonElement>('.join-code-created-head button');
+    const supportsMediaQuery = typeof matchMedia === 'function';
+    const phone = supportsMediaQuery && matchMedia('(max-width: 480px)').matches;
+    const reducedMotion = supportsMediaQuery && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (phone) {
+      // The clear code is shown once; reveal the panel inside the phone-sized dialog and make copying the next action.
+      created?.scrollIntoView?.({ block: 'nearest', behavior: reducedMotion ? 'auto' : 'smooth' });
+    } else {
+      // Preserve the existing desktop alignment.
+      created?.scrollIntoView?.({ block: 'center' });
+    }
+    copyCode?.focus({ preventScroll: true });
   });
 
   void load();

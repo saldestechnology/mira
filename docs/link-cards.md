@@ -6,6 +6,25 @@ Johan asked for "links with preview, parsed metadata and such". Today a pasted w
 
 Most of the page is about that fetch, because it is the risky part. The card itself is small.
 
+## Decisions (frozen 2026-10-10)
+
+Johan: "link cards: go with the recommendations". All twelve open questions below are closed with the answer given as drafted or recommended:
+
+1. Previews on by default for hosted workspaces, off for self-hosted accounts mode and open mode.
+2. A lone pasted http(s) address makes a link card by default (Johan's decision). Also: **Turn into text** (one undo step), **Turn into link card** on a text or sticky whose content is a single address, and a one-shot **Paste as plain text** (Cmd/Ctrl+Shift+V) that skips the card.
+3. Click selects; open with **Open link**, Cmd/Ctrl+click, double-click or Enter.
+4. Warn when an address looks like it carries a secret.
+5. Preview images count against the board's asset quota.
+6. No outbound proxy setting in v1.
+7. Send the person's language in `Accept-Language`.
+8. SVG export wraps link cards in `<a href>`.
+9. MCP may create plain link cards only; it does not trigger a fetch in v1.
+10. A failed preview stays failed until someone presses Refresh.
+11. Document the user agent and the opt-out; do not fetch `robots.txt` in v1.
+12. v2 order: YouTube and Vimeo thumbnails first.
+
+Layouts Compact, Card and Large are chosen from the quick bar (as drafted above).
+
 ## Summary
 
 - **A new object type `link`**: a box that shows a link's site icon and name, title, description, preview image and domain. Click opens the page in a new tab. Its size picks one of three layouts: **compact** (one line), **card** and **large image**.

@@ -7,6 +7,16 @@ const PAGE_MAX = 50;
 const PRIORITY_VALUES = new Map(['none', 'urgent', 'high', 'medium', 'low'].map((name, value) => [name, value]));
 const LIST_FILTERS = new Set(['state', 'label', 'assignee', 'creator', 'priority', 'category', 'project', 'milestone']);
 
+/**
+ * The FTS snippet marks matches with control characters 1 and 2 (ticket text can never contain them: input is refused or
+ * cleaned). Everything else is HTML-escaped, then the markers become the only tags the snippet can hold: <mark>…</mark>.
+ */
+export function markedSnippet(raw) {
+  if (typeof raw !== 'string') return raw ?? null;
+  const escaped = raw.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  return escaped.replaceAll('\u0001', '<mark>').replaceAll('\u0002', '</mark>');
+}
+
 export function buildFtsQuery(query) {
   const terms = query.match(/[\p{L}\p{M}\p{N}_]+/gu) ?? [];
   return terms.map((term, index) => {
@@ -434,7 +444,7 @@ function runTicketSearch({ directory, db: dbArg, actor, query = '', filters = []
   const pageClause = pageConditions.length ? `WHERE ${pageConditions.join(' AND ')}` : '';
   const rows = db.prepare(
     `${cte.sql}
-     SELECT ranked.*, ${cte.useFts ? "snippet(ticket_search, -1, '<mark>', '</mark>', '…', 16)" : 'NULL'} AS snippet
+     SELECT ranked.*, ${cte.useFts ? "snippet(ticket_search, -1, char(1), char(2), '…', 16)" : 'NULL'} AS snippet
      FROM ranked ${cte.useFts ? 'JOIN ticket_search ON ticket_search.rowid = ranked.search_rowid' : ''}
      ${pageClause}
      ORDER BY rank_bucket ASC, updated_at DESC, id ASC LIMIT ?`,
@@ -453,7 +463,7 @@ function runTicketSearch({ directory, db: dbArg, actor, query = '', filters = []
       archivedAt: row.archived_at,
       updatedAt: row.updated_at,
       updatedSeq: row.updated_seq,
-      snippet: row.snippet,
+      snippet: markedSnippet(row.snippet),
     })),
     total,
     next: hasMore && page.length ? makeCursor(page[page.length - 1], normalizedQuery, normalizedFilters) : null,

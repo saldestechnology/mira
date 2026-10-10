@@ -1,5 +1,5 @@
 /* Editing a template: a fixed bar above the board chrome, in the Swiss language of home.css (flush-left type, 2px ink
-   rule, square controls, the signal fill only on the primary action). Theme variables only. */
+   rule, 8px control radii, the signal fill only on the primary action). Theme variables only. */
 
 .board-root.editing-template > .chrome { top: 48px; }
 
@@ -14,7 +14,7 @@
 .template-banner-actions { display: flex; flex: none; align-items: center; gap: 8px; }
 
 .template-banner .btn {
-  height: 32px; padding: 0 14px; border: 1px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink);
+  height: 32px; padding: 0 14px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink);
   font-size: 13px; font-weight: 600;
 }
 .template-banner .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }

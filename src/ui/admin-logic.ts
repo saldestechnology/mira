@@ -101,6 +101,9 @@ export const KNOWN_AUDIT_ACTIONS = [
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
   'volume.adopt',
   'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
+  'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
+  'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
+  'tracker.label.create', 'tracker.milestone.create', 'tracker.milestone.update', 'tracker.project.create', 'tracker.project.update', 'tracker.ticket.archive', 'tracker.ticket.bulk', 'tracker.ticket.comment.delete', 'tracker.ticket.comment.edit', 'tracker.ticket.relate', 'tracker.ticket.restore', 'tracker.ticket.unrelate', 'tracker.view.create', 'tracker.view.delete', 'tracker.view.update',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -277,6 +280,49 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const scope = ({ read: ' (read only)', comment: ' (read and comment)', write: ' (read and edit)' } as Record<string, string>)[text(d.scope) ?? ''] ?? '';
       return `${who} created an AI tool access token${name ? ` ${quote(clip(name, 60))}` : ''}${scope}`;
     }
+    // Tracker (docs/tracker-api.md): ids only in the row, never ticket text
+    case 'tracker.ticket.create':
+      return `${who} created a ticket`;
+    case 'tracker.ticket.update':
+      return `${who} changed a ticket`;
+    case 'tracker.ticket.transition':
+      return `${who} moved a ticket to another state`;
+    case 'tracker.ticket.comment':
+      return `${who} commented on a ticket`;
+    case 'tracker.ticket.subscribe':
+      return `${who} subscribed to a ticket`;
+    case 'tracker.ticket.unsubscribe':
+      return `${who} unsubscribed from a ticket`;
+    case 'tracker.label.create':
+      return `${who} created a ticket label`;
+    case 'tracker.milestone.create':
+      return `${who} created a milestone`;
+    case 'tracker.milestone.update':
+      return `${who} changed a milestone`;
+    case 'tracker.project.create':
+      return `${who} created a project`;
+    case 'tracker.project.update':
+      return `${who} changed a project`;
+    case 'tracker.ticket.archive':
+      return `${who} archived a ticket`;
+    case 'tracker.ticket.bulk':
+      return `${who} changed several tickets at once`;
+    case 'tracker.ticket.comment.delete':
+      return `${who} deleted a ticket comment`;
+    case 'tracker.ticket.comment.edit':
+      return `${who} edited a ticket comment`;
+    case 'tracker.ticket.relate':
+      return `${who} linked two tickets`;
+    case 'tracker.ticket.restore':
+      return `${who} restored a ticket`;
+    case 'tracker.ticket.unrelate':
+      return `${who} removed a link between two tickets`;
+    case 'tracker.view.create':
+      return `${who} saved a ticket view`;
+    case 'tracker.view.delete':
+      return `${who} deleted a saved ticket view`;
+    case 'tracker.view.update':
+      return `${who} changed a saved ticket view`;
     case 'mcp.token.revoke': {
       const name = text(d.name);
       const label = name ? ` ${quote(clip(name, 60))}` : '';

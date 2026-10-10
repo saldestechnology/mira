@@ -461,4 +461,20 @@ describe('tracker search filters and ranking', () => {
       .reduce((sum: number, value: string) => sum + Buffer.byteLength(value, 'utf8'), 0)).toBeLessThanOrEqual(SEARCH_LIMITS.textBytes);
     expect(unicode.description).toBe('😀'.repeat(20_000));
   });
+
+  it('escapes everything in a snippet except the match marks', () => {
+    const { directory, actor } = fixture();
+    createTicket({
+      directory, actor, title: 'zzq <script>alert(1)</script> & "q"',
+      description: 'attr "><img src=x onerror=alert(1)> and \'single\' zzq',
+    });
+    const hit = searchTickets({ directory, actor, query: 'zzq' }).entries[0];
+    expect(hit.snippet).toContain('<mark>zzq</mark>');
+    expect(hit.snippet).not.toMatch(/<(?!\/?mark>)/);
+    expect(hit.snippet).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(hit.snippet).toContain('&amp;');
+    expect(hit.snippet).not.toContain('<img');
+    expect(hit.snippet).not.toContain('\u0001');
+    expect(hit.snippet).not.toContain('\u0002');
+  });
 });

@@ -3,7 +3,7 @@
 .member-row .who { min-width: 0; }
 .member-row .who > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge-off {
-  display: inline-block; margin-right: 6px; padding: 1px 6px; border: 1px solid var(--tray-line); border-radius: 0; vertical-align: 1px;
+  display: inline-block; margin-right: 6px; padding: 1px 6px; border: 1px solid var(--tray-line); border-radius: var(--radius-xs); vertical-align: 1px;
   background: transparent; color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
 }
 .invite-url { display: flex; gap: 8px; }

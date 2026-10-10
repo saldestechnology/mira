@@ -1,6 +1,6 @@
 /* Kanban on the canvas (docs/kanban.md, Visual design). Board objects are SVG drawn by src/markup.ts with inline
-   theme variables, so that exports carry them; this file is the DOM around them: the inline add-card input and the drag
-   ghost's lift. Radius 0, no shadows. */
+   theme variables, so that exports carry their geometry; this file is the DOM around them: the inline add-card field uses
+   the small control radius, while the drag ghost stays tied to the card. No shadows. */
 
 :root {
   --k-meta: color-mix(in srgb, var(--canvas-ink) 82%, var(--canvas));
@@ -10,7 +10,7 @@
 .k-input-wrap { position: absolute; left: 0; top: 0; z-index: 5; display: none; transform-origin: 0 0; }
 .k-input-wrap.show { display: block; }
 .k-input {
-  display: block; width: 100%; height: 34px; margin: 0; padding: 0 12px; border: 2px solid var(--ink); border-radius: 0;
+  display: block; width: 100%; height: 34px; margin: 0; padding: 0 12px; border: 2px solid var(--ink); border-radius: var(--radius-sm);
   background: var(--paper); color: var(--ink); font: 500 13px/18px var(--k-font, inherit); outline: none; caret-color: var(--ink);
 }
 .k-input::placeholder { color: color-mix(in srgb, var(--ink) 55%, var(--paper)); }

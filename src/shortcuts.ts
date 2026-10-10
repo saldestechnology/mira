@@ -66,6 +66,17 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'While dragging', keys: 'Shift while resizing', action: 'Keep proportions', ids: [] },
 ];
 
+/** Formats a canonical shortcut label for the platform that will display it. */
+export function formatShortcutLabel(keys: string, platform: string): string {
+  const mac = /Mac|iPhone|iPad/i.test(platform);
+  return keys
+    .replace(/Shift\+Ctrl\/Cmd\+/g, mac ? '⇧⌘' : 'Shift+Ctrl+')
+    .replace(/Ctrl\/Cmd\+/g, mac ? '⌘' : 'Ctrl+')
+    .replace(/Ctrl\/Cmd \+/g, mac ? '⌘ +' : 'Ctrl +')
+    .replace(/Alt\+/g, mac ? '⌥' : 'Alt+')
+    .replace(/Shift\+(?=(?:[A-Z0-9]|Arrows)\b)/g, mac ? '⇧' : 'Shift+');
+}
+
 /**
  * The keys the shortcuts dialog lists for one key id (a tool letter, or 'mod+z' style as in `ids`), for tooltips.
  * Undefined when no row documents the id, so a tooltip never shows a shortcut the dialog does not.

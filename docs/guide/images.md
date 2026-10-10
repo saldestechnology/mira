@@ -41,6 +41,10 @@ The quick-action bar has two buttons that belong to pictures:
 
 A picture is stored on your device first and sent to the server in the background. It shows at once for you. If you are offline, or the server is slow, other people see a grey box that says "Image not uploaded yet" until it arrives. It is sent when the connection is back, and nothing else for you to do.
 
+If the copy kept on your device is gone, or the server refused the upload, the picture is not dropped. You get a notice ("An image could not be uploaded because this browser no longer has it. Add it again."), and the box reads "Not uploaded: add this image again". A refused upload is tried once more each time the board is opened.
+
+On a hosted workspace a picture over 1 MB cannot be uploaded for now. You see "This image is over 1 MB, which is the upload limit for now. Use a smaller image." and the box reads "Not uploaded: over 1 MB". If you drop several at once, the notice counts them ("2 images are over 1 MB and may not upload to this workspace yet. Use smaller images."). Tabula aims to send pictures of about 900 KB, so most photos are shrunk to fit.
+
 A grey box can also say:
 
 | Message | What it means |

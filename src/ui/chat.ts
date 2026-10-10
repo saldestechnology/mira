@@ -93,6 +93,12 @@ export interface ObjectRefs {
 }
 
 /** What one conversation needs to be drawn: the channel, the element to draw in and who is looking. */
+/** What an empty workspace channel says (docs/chat.md): three short lines, no picture. */
+export const WORKSPACE_WELCOME = {
+  title: 'Workspace chat',
+  lines: ['Everyone in this workspace can read this channel.', 'Say hello.'],
+} as const;
+
 export interface ConversationOptions {
   chat: BoardChat;
   /** Makes DOM ids unique (the people list of the composer). */
@@ -105,6 +111,8 @@ export interface ConversationOptions {
   onView?: (view: ChatView) => void;
   /** Present in the board chat of an open board: **Reference selection** and chips that go to the object. */
   objects?: ObjectRefs;
+  /** The workspace channel: an empty one shows a short welcome block instead of the one-line hint, and the box takes focus. */
+  workspace?: boolean;
 }
 
 export interface Conversation {
@@ -123,6 +131,7 @@ export interface Conversation {
 export function mountConversation(opts: ConversationOptions): Conversation {
   const { chat, panel, signal } = opts;
   const boardId = opts.id;
+  let welcomed = false;
   const myId = opts.meId;
   const myName = opts.meName;
 
@@ -405,9 +414,21 @@ export function mountConversation(opts: ConversationOptions): Conversation {
 
   function paintOlder() {
     older.replaceChildren();
+    const welcome = Boolean(opts.workspace) && !view.lost && !view.messages.length && !view.pending.length && !view.loading && !view.loadingOlder;
+    older.classList.toggle('chat-welcome', welcome);
+    log.classList.toggle('has-welcome', welcome);
     if (view.loadingOlder) older.append(h('span', null, 'Loading older messages…'));
     else if (view.hasOlder && view.messages.length) older.append(h('button', { class: 'chat-action', onclick: () => void chat.loadOlder() }, 'Load older messages'));
-    else if (!view.messages.length && !view.pending.length && !view.loading) older.append(h('span', null, view.lost ? '' : 'No messages yet. Say hello.'));
+    else if (!view.messages.length && !view.pending.length && !view.loading) {
+      if (opts.workspace && !view.lost) {
+        older.append(h('strong', { class: 'chat-welcome-title' }, WORKSPACE_WELCOME.title), ...WORKSPACE_WELCOME.lines.map((line) => h('span', null, line)));
+        // the box takes focus the first time the empty channel is shown to someone who may write
+        if (!welcomed && view.access) {
+          welcomed = true;
+          requestAnimationFrame(() => (ta.disabled ? log : ta).focus());
+        }
+      } else older.append(h('span', null, view.lost ? '' : 'No messages yet. Say hello.'));
+    }
     else if (view.messages.length && !view.hasOlder) older.append(h('span', null, 'Start of the conversation'));
   }
 

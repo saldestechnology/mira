@@ -1,6 +1,6 @@
 // The layers panel's decisions as pure functions (TAB-198): what a click selects, what a key does, where a drag may drop,
 // what the controls are called. The panel (src/ui/layers.ts) draws the rows and carries these out.
-import { TYPE_LABEL, cleanName, type LayerNode } from './layers';
+import { TYPE_LABEL, cleanName, isFrameClass, type LayerNode } from './layers';
 import type { Id } from './types';
 import type { ICONS } from './ui/dom';
 
@@ -58,7 +58,7 @@ export function typeGlyph(type: string, kind?: string): IconName {
   switch (type) {
     case 'sticky': case 'card': return 'sticky';
     case 'text': return 'text';
-    case 'frame': return 'frame';
+    case 'frame': case 'tracker': return 'frame';
     case 'icon': return 'icons';
     case 'image': return 'image';
     case 'path': return 'pen';
@@ -185,9 +185,9 @@ export function dropTarget(nodes: readonly LayerNode[], dragId: Id, overId: Id, 
   const me = nodes.find((n) => n.id === dragId);
   const over = nodes.find((n) => n.id === overId);
   if (!me || !over || !me.movable || !over.movable || me.id === over.id) return null;
-  if (me.parent !== over.parent || (me.type === 'frame') !== (over.type === 'frame')) return null;
+  if (me.parent !== over.parent || isFrameClass(me) !== isFrameClass(over)) return null;
   const where = fraction < 0.5 ? 'above' : 'below';
-  const siblings = nodes.filter((n) => n.parent === me.parent && n.movable && (n.type === 'frame') === (me.type === 'frame'));
+  const siblings = nodes.filter((n) => n.parent === me.parent && n.movable && isFrameClass(n) === isFrameClass(me));
   const mine = siblings.findIndex((n) => n.id === me.id);
   const theirs = siblings.findIndex((n) => n.id === over.id);
   if ((where === 'above' && theirs === mine + 1) || (where === 'below' && theirs === mine - 1)) return null;

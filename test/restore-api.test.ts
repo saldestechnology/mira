@@ -241,10 +241,12 @@ describe('restoring the workspace', () => {
 
   it('answers 409 to a second one while the first runs, and 429 when one was just tried', async () => {
     let open!: (v: { ok: boolean }) => void;
+    let enterRun!: () => void;
     const held = new Promise<{ ok: boolean }>((resolve) => (open = resolve));
-    const s = await setup({ engine: (hh) => ({ backup: { ...hh.engine(), runNow: () => held } }) });
+    const entered = new Promise<void>((resolve) => (enterRun = resolve));
+    const s = await setup({ engine: (hh) => ({ backup: { ...hh.engine(), runNow: () => { enterRun(); return held; } } }) });
     const first = post(s, { manifest: s.manifest, confirm: 'RESTORE' });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await entered;
     const second = await post(s, { manifest: s.manifest, confirm: 'RESTORE' });
     expect(second.status).toBe(409);
     expect(second.body).toMatchObject({ error: 'restore_in_progress' });

@@ -1,4 +1,4 @@
-// Rate limits of chat (docs/chat.md, "Limits"): the writes, and the reads that are not a page of messages. Sliding windows in memory, modelled on the MCP limiter in
+// Rate limits of chat (docs/chat.md, "Limits"): the writes, and the reads of a conversation (metadata, unread, read markers and pages of messages). Sliding windows in memory, modelled on the MCP limiter in
 // mcp.mjs: a request over any of its limits is refused and counts against none of them.
 
 const MINUTE_MS = 60_000;
@@ -18,6 +18,8 @@ export const CHAT_LIMITS = Object.freeze({
   unread: { max: 60, windowMs: MINUTE_MS },
   read: { max: 60, windowMs: MINUTE_MS },
   react: { max: 60, windowMs: MINUTE_MS },
+  // a page of messages: one on opening a conversation and one for each time the person scrolls back for older ones
+  history: { max: 120, windowMs: MINUTE_MS },
 });
 
 const TEST_CHAT_BURST_WINDOW_MAX_MS = 60 * 60_000;
@@ -92,6 +94,7 @@ export function createChatLimits({ now = Date.now, limits = CHAT_LIMITS } = {}) 
   const unread = createWindow(limits.unread, now);
   const read = createWindow(limits.read, now);
   const react = createWindow(limits.react, now);
+  const history = createWindow(limits.history, now);
   return {
     /** A new message from `userId` in the channel `channel` ("kind/ref"). */
     post: (userId, channel) => hitAll([[perChannel, `${userId} ${channel}`], [overall, userId], [burst, userId]]),
@@ -105,5 +108,7 @@ export function createChatLimits({ now = Date.now, limits = CHAT_LIMITS } = {}) 
     read: (userId) => hitAll([[read, userId]]),
     /** A reaction switched on or off by `userId`. */
     react: (userId) => hitAll([[react, userId]]),
+    /** GET of a page of messages by `userId`, in any channel. */
+    history: (userId) => hitAll([[history, userId]]),
   };
 }

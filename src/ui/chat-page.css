@@ -1,5 +1,5 @@
 /* The Chat page (docs/chat.md, Interface): the channel list on the left, the open conversation on the right. Swiss, as the
-   admin dashboard and the home page: flush-left type, 2px ink rules, 1px hairlines, radius 0, theme variables only. The
+   admin dashboard and the home page: flush-left type, 2px ink rules, 1px hairlines, radius tokens by role, theme variables only. The
    conversation reuses the board chat's rows and composer (chat.css), which are drawn with the tray's variables, so the page
    maps those to its own palette. */
 
@@ -38,7 +38,7 @@
 .chat-row-meta { color: var(--graphite); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-row-badge {
   display: none; flex: none; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box;
-  background: var(--ink); color: var(--paper); font-size: 11px; font-weight: 700; line-height: 20px; text-align: center;
+  border-radius: var(--radius-xs); background: var(--ink); color: var(--paper); font-size: 11px; font-weight: 700; line-height: 20px; text-align: center;
 }
 .chat-row-badge.show { display: block; }
 .chat-row-badge.mention { outline: 2px solid var(--danger); outline-offset: 0; }
@@ -55,14 +55,15 @@
 .chat-conv-titles { flex: 1; min-width: 0; }
 .chat-conv-title { margin: 0; font: 800 20px/24px var(--display); letter-spacing: -0.02em; overflow-wrap: anywhere; outline-offset: 4px; }
 .chat-conv-sub { margin: 2px 0 0; color: var(--graphite); font-size: 12px; line-height: 16px; }
-.chat-open-board.btn { flex: none; display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border: 1px solid var(--ink); border-radius: 0; background: transparent; color: var(--ink); font-size: 12.5px; font-weight: 600; text-decoration: none; }
+.chat-open-board.btn { flex: none; display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink); font-size: 12.5px; font-weight: 600; text-decoration: none; }
 .chat-open-board.btn:hover { background: var(--ink); color: var(--paper); }
 .chat-open-board[hidden] { display: none; }
 .chat-back { display: none; flex: none; align-items: center; gap: 4px; height: 32px; padding: 0 8px 0 0; color: var(--ink); font-size: 12.5px; font-weight: 600; text-decoration: none; }
 .chat-back:hover { text-decoration: underline; text-underline-offset: 3px; }
 .chat-page-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .chat-page-panel[hidden] { display: none; }
-.chat-conv-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--graphite); }
+.chat-conv-empty { flex: 1; display: grid; place-items: center; padding: 24px; color: var(--tray-text); text-align: center; }
+.chat-conv-empty p { margin: 0; font-size: 15px; font-weight: 700; line-height: 20px; }
 .chat-conv-empty[hidden] { display: none; }
 .chat-page .chat-composer { padding-left: 24px; padding-right: 24px; }
 .chat-page .chat-older, .chat-page .chat-status { padding-left: 24px; padding-right: 24px; }

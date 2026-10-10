@@ -18,7 +18,12 @@ import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
+import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
+import { boardAccessForDirectory } from './tracker/access.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
+import { OpsError } from './tracker/shared.mjs';
+import { ticketAccess } from './tracker/access.mjs';
+import { createTrackerRoutes } from './tracker/api-routes.mjs';
 import {
   JOIN_CODE_DEFAULT_HOURS, JOIN_CODE_DEFAULT_USES, JOIN_CODE_ERROR, JOIN_CODE_MAX_HOURS, JOIN_CODE_MAX_USES,
   generateJoinCode,
@@ -34,7 +39,7 @@ const TEAM_ROLES = ['admin', 'member'];
 const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
 const TOKEN_FIELDS = ['name', 'scope', 'boardIds', 'days', 'tracker'];
 const PRINCIPAL_TYPES = ['user', 'team'];
-const BODY_METHODS = new Set(['POST', 'PATCH', 'PUT']);
+const BODY_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const CONTROL_RE = /\p{Cc}/u;
 const AUDIT_DEFAULT_LIMIT = 50;
@@ -190,6 +195,40 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }
   };
   const audit = (user, action, detail) => directory.audit(user.id, action, detail);
+
+  const trackerCanAccess = (user) => {
+    if (!config.tracker) return false;
+    try {
+      ticketAccess({ type: 'user', userId: user.id, user }, { id: 'tracker-access-check' });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const trackerApiRoutes = config.authEnabled && config.tracker
+    ? createTrackerRoutes({ directory, compile, audit, cloud, now })
+    : [];
+  const trackerMutationWindows = new Map();
+  function requireTrackerMutationCapacity(user, res) {
+    const current = now();
+    let window = trackerMutationWindows.get(user.id);
+    if (!window || current - window.startedAt >= 60_000 || current < window.startedAt) {
+      window = { startedAt: current, count: 0 };
+      trackerMutationWindows.set(user.id, window);
+    }
+    if (trackerMutationWindows.size > 10_000) {
+      for (const [userId, entry] of trackerMutationWindows) {
+        if (current - entry.startedAt >= 60_000 || current < entry.startedAt) trackerMutationWindows.delete(userId);
+      }
+    }
+    if (window.count >= 60) {
+      const retryAfter = Math.max(1, Math.ceil((60_000 - (current - window.startedAt)) / 1000));
+      res.setHeader('retry-after', String(retryAfter));
+      throw new HttpError(429, 'rate_limited', 'Tracker mutations are limited to 60 per minute.');
+    }
+    window.count++;
+  }
 
   const clientIp = (req) => clientIpOf(req, config);
 
@@ -401,6 +440,15 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         notifier: chat.notifier ?? null,
         emit,
         errors: { HttpError, badRequest, forbidden, notFound, conflict },
+    })
+    : [];
+
+  const trackerRoutes = config.tracker
+    ? createTrackerInboxRoutes({
+        directory,
+        boardAccess: boardAccessForDirectory(directory),
+        compile,
+        errors: { HttpError, badRequest },
       })
     : [];
 
@@ -409,6 +457,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // ------------------------------------------------------------ handlers
 
   const routes = [
+    ...trackerApiRoutes,
+
     compile('GET', 'config', { public: true }, () => [200, {
       authEnabled: config.authEnabled,
       ...(assets ? { images: true } : {}),
@@ -430,6 +480,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         ...(assets ? { images: true } : {}),
         ...(chatOn ? { chat: true } : {}),
         ...(config.joinCodes ? { joinCodes: true } : {}),
+        ...(trackerCanAccess(user) ? { tracker: true } : {}),
         ...aiApi.meFlag(user),
       },
     ]),
@@ -1173,6 +1224,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
     ...chatRoutes,
 
+    // ---------------------------------------------------------- tracker inbox and notification preferences (docs/mcp.md)
+
+    ...trackerRoutes,
+
     // ---------------------------------------------------------- hosted workspaces (docs/cloud.md)
 
     ...(cloud
@@ -1292,6 +1347,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }
     const method = String(req.method).toUpperCase();
     const guest = auth.authenticateGuest?.(req.headers.cookie) ?? null;
+    if (guest && segments[0] === 'tracker') throw notFound('No such endpoint');
     if (guest && !guestApiAllows(method, segments, guest)) throw forbidden('This guest session is limited to one board');
     const { route, params } = resolve(method, segments);
 
@@ -1313,12 +1369,30 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     };
 
     let session = route.public || route.internal ? null : signedIn();
+    if (route.tracker) {
+      try {
+        ticketAccess({ type: 'user', userId: session?.user?.id, user: session?.user }, { id: 'tracker-access-check' });
+      } catch {
+        throw notFound('No such endpoint');
+      }
+    }
     if (cloud && !route.readOnlyOk && !READ_METHODS.has(method) && cloud.limits().readOnly) {
+      if (route.trackerMutation) throw new HttpError(403, 'read_only', 'This workspace is read-only.');
       throw new HttpError(402, 'read_only', 'This workspace is read-only. Ask the workspace owner to check billing.');
     }
+    if (route.trackerMutation) requireTrackerMutationCapacity(session.user, res);
     const body = route.body && BODY_METHODS.has(method) ? await readJson(req, route.maxBody ?? MAX_BODY) : {};
     // A body can take a while to arrive: judge the request by who the caller is now, not when it started.
-    if (session && route.body) session = signedIn();
+    if (session && route.body) {
+      session = signedIn();
+      if (route.tracker) {
+        try {
+          ticketAccess({ type: 'user', userId: session.user.id, user: session.user }, { id: 'tracker-access-check' });
+        } catch {
+          throw notFound('No such endpoint');
+        }
+      }
+    }
 
     const answer = await route.handler({
       req,
@@ -1375,6 +1449,24 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         if (err.allow) res.setHeader('allow', err.allow);
         if (err.status === 413) res.setHeader('connection', 'close');
         send(res, err.status, { error: err.code, message: err.message, ...err.extra });
+      } else if (err instanceof OpsError) {
+        const statuses = {
+          invalid_input: 400,
+          invalid_filter: 400,
+          not_found: 404,
+          forbidden: 403,
+          conflict: 409,
+          read_only: 403,
+          limit_exceeded: 413,
+        };
+        const status = statuses[err.code] ?? 400;
+        if (status === 413) res.setHeader('connection', 'close');
+        send(res, status, {
+          error: err.code,
+          message: err.message,
+          ...(err.path ? { path: err.path } : {}),
+          ...(err.ticket ? { ticket: err.ticket } : {}),
+        });
       } else {
         console.error('api: unexpected error:', describeError(err));
         send(res, 500, { error: 'internal', message: 'Something went wrong' });

@@ -175,7 +175,7 @@ export function groupPlan(ids: readonly Id[], get: GetObject, childrenOf: ListCh
   const items: Obj[] = [];
   const chosenConnectors: Obj[] = [];
   for (const o of objects) {
-    if (o.type === 'frame') frames++;
+    if (o.type === 'frame' || o.type === 'tracker') frames++;
     else if (o.parent && get(o.parent)?.type === 'lane') other++;
     else if (o.type === 'connector') chosenConnectors.push(o);
     else items.push(o);
@@ -274,7 +274,7 @@ export function membersBounds(
       if (!visible(child)) continue;
       if (isGroup(child)) {
         walk(child.id);
-      } else if (isBox(child) && child.type !== 'frame') {
+      } else if (isBox(child) && child.type !== 'frame' && child.type !== 'tracker') {
         rects.push(boundsOf(child));
       }
     }

@@ -14,7 +14,7 @@ export type VoteScope = { kind: 'all' } | { kind: 'stickies' } | { kind: 'select
 export const UNLIMITED = 0;
 
 /** What a dot vote may be placed on before anyone narrows it: boxes, not frames, drawings, kanban containers or lanes. */
-const VOTABLE = (o: Obj) => isBox(o) && o.type !== 'frame' && o.type !== 'path' && o.type !== 'container' && o.type !== 'lane' && !isConnector(o);
+const VOTABLE = (o: Obj) => isBox(o) && o.type !== 'frame' && o.type !== 'tracker' && o.type !== 'path' && o.type !== 'container' && o.type !== 'lane' && !isConnector(o);
 
 /**
  * Facilitation: a scripted sequence of steps run on the board. All state lives
@@ -274,7 +274,7 @@ export class Flow {
     if (!step || step.mode !== 'vote') return false;
     if (!this.canVote(step, hit)) {
       // a frame is the background of what is on it, so a click on one is not a try at voting; anything else says why nothing happened
-      if (isBox(hit) && hit.type !== 'frame' && !remove) this.app.emit('vote-skip');
+      if (isBox(hit) && hit.type !== 'frame' && hit.type !== 'tracker' && !remove) this.app.emit('vote-skip');
       return false;
     }
     const votes = this.app.store.votes;

@@ -1,0 +1,71 @@
+{
+  "LinearTeams": {
+    "status": 200,
+    "body": {"data": {"teams": {"nodes": [
+      {"id": "00000000-0000-4000-8000-000000000001", "key": "TAB", "name": "Core", "private": false, "archivedAt": null},
+      {"id": "00000000-0000-4000-8000-000000000002", "key": "TAB", "name": "Platform", "private": false, "archivedAt": null},
+      {"id": "00000000-0000-4000-8000-000000000003", "key": "TAB", "name": "Private work", "private": true, "archivedAt": null}
+    ], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  },
+  "LinearUsers": {
+    "status": 200,
+    "body": {"data": {"users": {"nodes": [
+      {"id": "00000000-0000-4000-8000-000000000010", "name": "Ari Member", "email": " ari@example.com ", "active": true},
+      {"id": "00000000-0000-4000-8000-000000000011", "name": "Import bot", "email": null, "active": false}
+    ], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  },
+  "LinearStates": {
+    "status": 200,
+    "body": {"data": {"workflowStates": {"nodes": [
+      {"id": "00000000-0000-4000-8000-000000000020", "name": "Backlog", "type": "backlog", "team": {"id": "00000000-0000-4000-8000-000000000001"}},
+      {"id": "00000000-0000-4000-8000-000000000021", "name": "Code review", "type": "started", "team": {"id": "00000000-0000-4000-8000-000000000002"}},
+      {"id": "00000000-0000-4000-8000-000000000022", "name": "Done", "type": "completed", "team": {"id": "00000000-0000-4000-8000-000000000003"}}
+    ], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  },
+  "LinearLabels": {
+    "status": 200,
+    "body": {"data": {"issueLabels": {"nodes": [
+      {"id": "00000000-0000-4000-8000-000000000030", "name": "Bug", "color": "#aabbcc", "archivedAt": null, "team": {"id": "00000000-0000-4000-8000-000000000001"}},
+      {"id": "00000000-0000-4000-8000-000000000031", "name": "bug", "color": "#ff0000", "archivedAt": null, "team": {"id": "00000000-0000-4000-8000-000000000002"}}
+    ], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  },
+  "LinearProjects": {
+    "status": 200,
+    "body": {"data": {"projects": {"nodes": [
+      {"id": "00000000-0000-4000-8000-000000000040", "name": "Tracker launch", "description": "Fixture project", "state": "started", "createdAt": "2025-01-01T00:00:00.000Z", "updatedAt": "2025-01-02T00:00:00.000Z", "archivedAt": null, "teams": {"nodes": [{"id": "00000000-0000-4000-8000-000000000001"}]}}
+    ], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  },
+  "LinearCycles": {
+    "status": 200,
+    "body": {"data": {"cycles": {"nodes": [
+      {"id": "00000000-0000-4000-8000-000000000041", "name": "Cycle 1", "description": "", "startsAt": "2025-01-01T00:00:00.000Z", "endsAt": "2025-01-15T00:00:00.000Z", "completedAt": null, "archivedAt": null, "team": {"id": "00000000-0000-4000-8000-000000000001"}}
+    ], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  },
+  "LinearMilestones": {
+    "status": 200,
+    "body": {"data": {"projectMilestones": {"nodes": [
+      {"id": "00000000-0000-4000-8000-000000000042", "name": "Alpha", "description": "", "targetDate": "2025-02-01", "project": {"id": "00000000-0000-4000-8000-000000000040"}, "createdAt": "2025-01-01T00:00:00.000Z", "updatedAt": "2025-01-02T00:00:00.000Z", "archivedAt": null}
+    ], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  },
+  "LinearIssues": {
+    "status": 200,
+    "body": {"data": {"issues": {"nodes": [
+      {"id": "00000000-0000-4000-8000-000000000050", "identifier": "TAB-211", "number": 211, "title": "Unicode 🧭 **launch**", "description": "Markdown **description**", "priority": 2, "estimate": 3, "state": {"id": "00000000-0000-4000-8000-000000000021", "name": "Code review", "type": "started"}, "assignee": {"id": "00000000-0000-4000-8000-000000000010", "name": "Ari Member", "email": "ARI@example.com "}, "creator": {"id": "00000000-0000-4000-8000-000000000010", "name": "Ari Member", "email": "ari@example.com"}, "labels": {"nodes": [{"id": "00000000-0000-4000-8000-000000000030", "name": "Bug", "color": "#aabbcc"}, {"id": "00000000-0000-4000-8000-000000000031", "name": "bug", "color": "#ff0000"}]}, "project": {"id": "00000000-0000-4000-8000-000000000040"}, "cycle": {"id": "00000000-0000-4000-8000-000000000041"}, "projectMilestone": {"id": "00000000-0000-4000-8000-000000000042"}, "parent": null, "dueDate": "2025-01-10", "createdAt": "2025-01-01T00:00:00.000Z", "updatedAt": "2025-01-02T00:00:00.000Z", "archivedAt": null, "completedAt": null, "canceledAt": null, "url": "https://linear.app/tab/issue/TAB-211", "team": {"id": "00000000-0000-4000-8000-000000000001", "key": "TAB", "name": "Core", "private": false}}
+    ], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  },
+  "LinearComments": {
+    "status": 200,
+    "body": {"data": {"comments": {"nodes": [
+      {"id": "00000000-0000-4000-8000-000000000060", "body": "Parent **comment**", "createdAt": "2025-01-02T00:00:00.000Z", "updatedAt": null, "deletedAt": null, "user": {"id": "00000000-0000-4000-8000-000000000010", "name": "Ari Member", "email": "ARI@example.com "}, "parent": null, "issue": {"id": "00000000-0000-4000-8000-000000000050"}},
+      {"id": "00000000-0000-4000-8000-000000000061", "body": "Threaded reply 🧵", "createdAt": "2025-01-03T00:00:00.000Z", "updatedAt": "2025-01-03T01:00:00.000Z", "deletedAt": null, "user": {"id": "00000000-0000-4000-8000-000000000011", "name": "Import bot", "email": null}, "parent": {"id": "00000000-0000-4000-8000-000000000060"}, "issue": {"id": "00000000-0000-4000-8000-000000000050"}}
+    ], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  },
+  "LinearRelations": {
+    "status": 200,
+    "body": {"data": {"issueRelations": {"nodes": [{"id": "00000000-0000-4000-8000-000000000070", "type": "blocks", "issue": {"id": "00000000-0000-4000-8000-000000000050"}, "relatedIssue": {"id": "00000000-0000-4000-8000-000000000051"}}], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  },
+  "LinearAttachments": {
+    "status": 200,
+    "body": {"data": {"attachments": {"nodes": [{"id": "00000000-0000-4000-8000-000000000080", "url": "https://files.example.test/design.pdf", "title": "Wireframe", "issue": {"id": "00000000-0000-4000-8000-000000000050"}}], "pageInfo": {"endCursor": null, "hasNextPage": false}}}}
+  }
+}

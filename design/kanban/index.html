@@ -142,6 +142,10 @@
 :root {
   --ui: 'Switzer', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --display: 'Cabinet Grotesk', 'Switzer', ui-sans-serif, system-ui, sans-serif;
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
   --k-lane: color-mix(in srgb, var(--canvas-ink) 5%, var(--canvas));      /* lane body */
   --k-meta: color-mix(in srgb, var(--canvas-ink) 82%, var(--canvas));     /* secondary text on canvas surfaces */
   --k-card-meta: color-mix(in srgb, var(--ink) 72%, var(--paper));        /* secondary text on a card */
@@ -167,10 +171,10 @@ button { cursor: pointer; }
 .review h1 span { color: var(--graphite); font-weight: 500; letter-spacing: 0; text-transform: none; margin-left: 8px; }
 .review-grid { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; }
 .review label { display: flex; flex-direction: column; gap: 2px; font: 600 11px/16px var(--ui); letter-spacing: 0.06em; text-transform: uppercase; color: var(--graphite); }
-.review select, .review button { height: 32px; padding: 0 8px; border: 1px solid var(--rule); border-radius: 0; background: var(--paper); font: 500 13px var(--ui); color: var(--ink); text-transform: none; letter-spacing: 0; }
+.review select, .review button { height: 32px; padding: 0 8px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--paper); font: 500 13px var(--ui); color: var(--ink); text-transform: none; letter-spacing: 0; }
 .review button:hover, .review select:hover { border-color: var(--ink); }
 .review .chk { flex-direction: row; align-items: center; gap: 8px; height: 32px; }
-.review .chk input { width: 16px; height: 16px; accent-color: var(--ink); }
+.review .chk input { width: 16px; height: 16px; border-radius: var(--radius-xs); accent-color: var(--ink); }
 .review .note { flex: 1 1 280px; margin: 0; font-size: 12px; color: var(--graphite); min-height: 18px; }
 body.bare .review { display: none; }
 body.bare { height: 100vh; }
@@ -186,7 +190,7 @@ body.bare.w390 .stage { padding: 0; }
 
 /* chrome stubs, flat (the real trays live in src/styles.css) */
 .chrome { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
-.bar { position: absolute; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; background: var(--tray); color: var(--tray-text); pointer-events: auto; }
+.bar { position: absolute; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; background: var(--tray); color: var(--tray-text); border-radius: var(--radius-md); pointer-events: auto; }
 .top-left { left: 12px; top: 12px; }
 .board-name { font-weight: 600; }
 .ico-wrap { display: inline-flex; }
@@ -204,13 +208,13 @@ body.bare.w390 .stage { padding: 0; }
 .k-name { font: 700 17px/24px var(--display); letter-spacing: -0.01em; white-space: nowrap; }
 .k-meta { color: var(--k-meta); white-space: nowrap; }
 .k-head-end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-.k-fchip { display: inline-flex; align-items: center; gap: 2px; height: 32px; padding: 0 0 0 8px; border: 1px solid var(--canvas-ink); color: var(--canvas-ink); background: transparent; }
+.k-fchip { display: inline-flex; align-items: center; gap: 2px; height: 32px; padding: 0 0 0 8px; border: 1px solid var(--canvas-ink); border-radius: var(--radius-xs); color: var(--canvas-ink); background: transparent; }
 .k-fchip .k-icon { width: 30px; height: 30px; }
-.k-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--canvas-ink); background: transparent; color: var(--canvas-ink); border-radius: 0; }
+.k-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--canvas-ink); background: transparent; color: var(--canvas-ink); border-radius: var(--radius-sm); }
 .k-btn:hover { background: var(--canvas-ink); color: var(--canvas); }
 .k-btn.on { background: var(--signal); color: var(--on-signal); border-color: var(--signal); }
 .k-btn.on:hover { background: color-mix(in srgb, var(--signal) 85%, var(--ink)); }
-.k-icon { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; background: transparent; color: var(--canvas-ink); border-radius: 0; }
+.k-icon { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; background: transparent; color: var(--canvas-ink); border-radius: var(--radius-sm); }
 .k-icon:hover, .k-icon.on { background: var(--canvas-ink); color: var(--canvas); }
 
 /* selection, as for every object: a wire outline and square handles */
@@ -291,20 +295,20 @@ body.reduce .k-card.ghost { animation: none; }
 body.reduce .k-card.landing { transition: none; }
 
 /* ------------------------------------------------ popovers and menus (DOM chrome, not board content) */
-.pop { position: absolute; z-index: 15; background: var(--paper); color: var(--ink); border: 1px solid var(--ink); border-top-width: 2px; }
+.pop { position: absolute; z-index: 15; background: var(--paper); color: var(--ink); border: 1px solid var(--ink); border-top-width: 2px; border-radius: var(--radius-md); }
 .pop-sec { padding: 12px 16px; border-top: 1px solid var(--rule); }
 .pop-sec:first-child { border-top: 0; }
 .pop-h { color: var(--graphite); margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
 .seg { display: flex; flex-wrap: wrap; gap: 8px; }
-.opt { height: 32px; padding: 0 10px; border: 1px solid var(--rule); background: var(--paper); color: var(--graphite); border-radius: 0; display: inline-flex; align-items: center; gap: 6px; }
+.opt { height: 32px; padding: 0 10px; border: 1px solid var(--rule); background: var(--paper); color: var(--graphite); border-radius: var(--radius-xs); display: inline-flex; align-items: center; gap: 6px; }
 .opt:hover { border-color: var(--ink); color: var(--ink); }
 .opt.on { border-color: var(--ink); background: var(--ink); color: var(--paper); }
-.opt .sw { width: 10px; height: 10px; background: var(--lc); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sticky-ink) 30%, transparent); }
-.pop .input { width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: 0; }
+.opt .sw { width: 10px; height: 10px; border-radius: var(--radius-xs); background: var(--lc); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sticky-ink) 30%, transparent); }
+.pop .input { width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); border-radius: var(--radius-sm); }
 .pop .input::placeholder { color: var(--graphite); }
 .pop-foot { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid var(--rule); }
 .linkbtn { border: 0; background: none; padding: 0; color: var(--ink); text-decoration: underline; text-underline-offset: 4px; font-size: 13px; font-weight: 600; }
-.mi { display: flex; width: 100%; align-items: center; gap: 10px; height: 36px; padding: 0 16px; border: 0; background: transparent; color: var(--ink); text-align: left; font-size: 13px; }
+.mi { display: flex; width: 100%; align-items: center; gap: 10px; height: 36px; padding: 0 16px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink); text-align: left; font-size: 13px; }
 .mi:hover { background: var(--ink); color: var(--paper); }
 .mi kbd { margin-left: auto; font: 600 11px var(--ui); color: var(--graphite); }
 .mi:hover kbd { color: inherit; }
@@ -313,25 +317,25 @@ body.reduce .k-card.landing { transition: none; }
 .mi-rule { height: 1px; background: var(--rule); margin: 4px 0; }
 
 /* quick-action bar stub for the selected container */
-.qbar { position: absolute; z-index: 16; display: flex; align-items: center; gap: 2px; padding: 4px; background: var(--tray); color: var(--tray-text); }
-.qbar button { white-space: nowrap; height: 32px; padding: 0 10px; border: 0; background: transparent; color: inherit; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
+.qbar { position: absolute; z-index: 16; display: flex; align-items: center; gap: 2px; padding: 4px; background: var(--tray); color: var(--tray-text); border-radius: var(--radius-md); }
+.qbar button { white-space: nowrap; height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
 .qbar button:hover { background: var(--tray-hover); }
 .qbar button.primary { background: var(--signal); color: var(--on-signal); font-weight: 600; }
 .qbar .sep { width: 1px; height: 20px; margin: 0 4px; background: var(--tray-line); }
 
-.toast { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 40px; background: var(--tray); color: var(--tray-text); border-left: 4px solid var(--danger); font-size: 13px; font-weight: 500; white-space: nowrap; }
+.toast { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 40px; background: var(--tray); color: var(--tray-text); border-left: 4px solid var(--danger); border-radius: var(--radius-md); font-size: 13px; font-weight: 500; white-space: nowrap; }
 
 /* ------------------------------------------------ phone list sheet (DOM: also the keyboard and screen reader route) */
-.sheet { position: absolute; left: 0; right: 0; top: 64px; bottom: 0; z-index: 25; display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border-top: 2px solid var(--ink); }
+.sheet { position: absolute; left: 0; right: 0; top: 64px; bottom: 0; z-index: 25; display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border-top: 2px solid var(--ink); border-radius: var(--radius-lg); overflow: hidden; }
 .sh-head { flex: none; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 8px 0 16px; }
 .sh-title { min-width: 0; flex: 1 1 auto; }
 .sh-title b { display: block; font: 700 20px/24px var(--display); letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sh-title span { color: var(--graphite); }
-.sh-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; min-width: 40px; padding: 0 10px; border: 1px solid var(--ink); background: transparent; color: var(--ink); border-radius: 0; }
+.sh-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; min-width: 40px; padding: 0 10px; border: 1px solid var(--ink); background: transparent; color: var(--ink); border-radius: var(--radius-sm); }
 .sh-btn.icon { border: 0; padding: 0; width: 40px; }
 .sh-btn.on { background: var(--signal); color: var(--on-signal); border-color: var(--signal); }
 .tabs { flex: none; display: flex; gap: 24px; padding: 0 16px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--rule); }
-.tab { flex: none; height: 48px; padding: 0; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--graphite); display: inline-flex; align-items: center; gap: 6px; }
+.tab { flex: none; height: 48px; padding: 0; border: 0; border-bottom: 2px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--graphite); display: inline-flex; align-items: center; gap: 6px; }
 .tab.on { color: var(--ink); border-bottom-color: var(--ink); }
 .tab .n { color: inherit; }
 .tab .n.over { padding: 0 4px; background: var(--danger); color: var(--paper); }
@@ -345,13 +349,13 @@ body.reduce .k-card.landing { transition: none; }
 .row .k-due.done, .row .k-ccount { color: var(--graphite); }
 .row-sel { background: color-mix(in srgb, var(--ink) 6%, var(--paper)); }
 .sh-add { flex: none; padding: 12px 16px; border-top: 2px solid var(--ink); background: var(--paper); }
-.sh-add button { width: 100%; height: 48px; border: 0; background: var(--signal); color: var(--on-signal); font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 0; }
+.sh-add button { width: 100%; height: 48px; border: 0; border-radius: var(--radius-sm); background: var(--signal); color: var(--on-signal); font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .scrim { position: absolute; inset: 0; z-index: 26; background: color-mix(in srgb, var(--tray) 55%, transparent); }
-.bsheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 27; max-height: 85%; display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border-top: 2px solid var(--ink); }
+.bsheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 27; max-height: 85%; display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border-top: 2px solid var(--ink); border-radius: var(--radius-lg); overflow: hidden; }
 .bs-head { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 8px 0 16px; }
 .bs-head b { font: 700 20px/24px var(--display); letter-spacing: -0.02em; }
 .bs-sub { padding: 0 16px 8px; color: var(--graphite); }
-.lane-opt { display: flex; align-items: center; gap: 12px; width: 100%; height: 48px; padding: 0 16px; border: 0; border-top: 1px solid var(--rule); background: transparent; color: var(--ink); text-align: left; font-size: 15px; }
+.lane-opt { display: flex; align-items: center; gap: 12px; width: 100%; height: 48px; padding: 0 16px; border: 0; border-top: 1px solid var(--rule); border-radius: var(--radius-sm); background: transparent; color: var(--ink); text-align: left; font-size: 15px; }
 .lane-opt .rd { width: 18px; height: 18px; flex: none; box-shadow: inset 0 0 0 1.5px var(--ink); }
 .lane-opt.on .rd { box-shadow: inset 0 0 0 1.5px var(--ink), inset 0 0 0 5px var(--paper); background: var(--ink); }
 .lane-opt .sw { width: 4px; align-self: stretch; margin: 12px 0; background: var(--lc, transparent); }
@@ -362,7 +366,7 @@ body.reduce .k-card.landing { transition: none; }
 .bs-pos { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--rule); }
 .bs-pos .opt { flex: 1 1 0; justify-content: center; height: 40px; }
 .bs-foot { display: flex; gap: 8px; padding: 12px 16px 16px; border-top: 2px solid var(--ink); }
-.bs-foot button { flex: 1 1 0; height: 48px; border: 1px solid var(--ink); background: transparent; color: var(--ink); font-weight: 600; border-radius: 0; }
+.bs-foot button { flex: 1 1 0; height: 48px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink); font-weight: 600; }
 .bs-foot button.primary { border: 0; background: var(--signal); color: var(--on-signal); }
 
 /* below zoom 0.4: card text becomes blocks, lane headers keep the name only (docs/kanban.md, Rendering) */

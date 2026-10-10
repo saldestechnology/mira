@@ -39,20 +39,20 @@
 .aibar [aria-disabled='true'] { opacity: 0.4; cursor: default; }
 
 .aibar-grip {
-  order: -1; flex: none; width: 20px; height: 36px; margin-right: -4px; padding: 0; border: 0; border-radius: 0; background: transparent;
+  order: -1; flex: none; width: 20px; height: 36px; margin-right: -4px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent;
   color: var(--tray-muted); display: grid; place-items: center; cursor: grab; touch-action: none;
 }
 .aibar-grip:hover { color: var(--tray-text); background: var(--tray-hover); }
 .aibar.dragging .aibar-grip { cursor: grabbing; }
 
 .aibar-ctx {
-  flex: none; height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; border: 1px solid var(--tray-line); border-radius: 0;
+  flex: none; height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; border: 1px solid var(--tray-line); border-radius: var(--radius-sm);
   background: transparent; font-weight: 600; font-size: 12.5px; white-space: nowrap;
 }
 .aibar-ctx:hover { background: var(--tray-hover); }
 .aibar-field { position: relative; flex: 1 1 0; min-width: 0; display: flex; }
 .aibar-input {
-  width: 100%; height: 36px; padding: 0 40px 0 10px; border-radius: 0; border: 1px solid var(--tray-line);
+  width: 100%; height: 36px; padding: 0 40px 0 10px; border-radius: var(--radius-sm); border: 1px solid var(--tray-line);
   background: color-mix(in srgb, var(--tray-text) 6%, transparent); color: var(--tray-text); outline: none; font-size: 13px;
 }
 .aibar-input:focus { border-color: var(--signal); }
@@ -74,7 +74,7 @@
 .aibar-off { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .aibar-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-.aibar-model { flex: none; height: 36px; display: inline-flex; align-items: center; padding: 0 8px; border: 0; border-radius: 0; background: transparent; color: var(--tray-muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.aibar-model { flex: none; height: 36px; display: inline-flex; align-items: center; padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted); font-size: 12px; font-weight: 500; white-space: nowrap; }
 .aibar-model:hover { background: var(--tray-hover); color: var(--tray-text); }
 .aibar-model.armed { color: var(--tray-text); font-weight: 600; }
 .aibar-disclosure > .aibar-model-wrap { display: none; }
@@ -94,7 +94,7 @@
 
 /* popovers of the bar: the context menu, the history list and the model details */
 .aibar-pop {
-  position: absolute; z-index: 20; min-width: 240px; max-width: 320px; padding: 4px; border-radius: 0; font-size: 13px;
+  position: absolute; z-index: 20; min-width: 240px; max-width: 320px; padding: 4px; border-radius: var(--radius-md); font-size: 13px;
   box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent);
 }
 :root:not([data-theme='default']) .aibar-pop.tray { box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent); }

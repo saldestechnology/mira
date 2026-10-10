@@ -30,7 +30,7 @@ Scope: the formatting controls for text elements: bold, italic, underline, strik
 
 ### 2.3 Layout
 
-One row, ink tray (the board's `--tray` chrome so it reads as part of the tool, not content), square corners, 1 px `--tray-line` hairline border, no shadow beyond the existing popover shadow. Controls are grouped by hairline dividers:
+One row, ink tray (the board's `--tray` chrome so it reads as part of the tool, not content), a 12 px radius, 1 px `--tray-line` hairline border, no shadow beyond the existing popover shadow. Controls are grouped by hairline dividers; individual controls use an 8 px radius:
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -122,7 +122,7 @@ Pasted text with line breaks is **not** turned into a list (paste creates plain 
 ## 6. The Swiss look
 
 - **Surface**: the tray colour of the board's own chrome (`--tray`, `--tray-text`, `--tray-line`, `--signal`, `--on-signal`), so it is correct on every theme (Default, Ayu, Kanagawa, Matrix, Evergreen, light and dark) with no colours of its own. Never white on black hard-coded; never a drop-shadow tint.
-- **Geometry**: square corners (radius 0, as the board UI), an 8 px grid (32 px controls, 2 px gaps, 6 px divider margins, 12 px clear of the element), 1 px hairlines.
+- **Geometry**: an 8 px control radius inside a 12 px popover (the chrome uses the shared UI radius tokens), an 8 px grid (32 px controls, 2 px gaps, 6 px divider margins, 12 px clear of the element), 1 px hairlines. The edited board text keeps its own geometry.
 - **Icons**: the board's icon set (20 px, 2 px stroke, square caps), plus the four letter controls in Instrument Sans: **B** in 700, *I* italic, U underlined and S struck, so the control shows the effect. No Bodoni (the brand rule: no Bodoni under 17 px), no emoji as icons.
 - **Colour**: one accent, the board's signal colour, for "on". No red, no cobalt in this popover; the text colour of the text element is never changed by it.
 - **Motion**: none (appears and disappears in place; follows the element without easing). Under `prefers-reduced-motion` nothing differs.

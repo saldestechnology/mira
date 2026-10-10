@@ -1,3 +1,4 @@
+import { MIGRATIONS } from '../server/directory.mjs';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -43,6 +44,8 @@ function ticketCounts(directory: string) {
       comments: db.prepare('SELECT COUNT(*) AS n FROM ticket_comments').get()!.n,
       labels: db.prepare('SELECT COUNT(*) AS n FROM labels').get()!.n,
       ticketLabels: db.prepare('SELECT COUNT(*) AS n FROM ticket_labels').get()!.n,
+      subscriptions: db.prepare('SELECT COUNT(*) AS n FROM ticket_subscriptions').get()!.n,
+      notifications: db.prepare('SELECT COUNT(*) AS n FROM notifications').get()!.n,
       versions: db.prepare('SELECT COUNT(*) AS n FROM ticket_field_versions').get()!.n,
       searchRows: db.prepare('SELECT COUNT(*) AS n FROM ticket_search').get()!.n,
       projects: db.prepare('SELECT COUNT(*) AS n FROM projects').get()!.n,
@@ -309,7 +312,7 @@ describe('tracker disabled and open mode', () => {
       const after = ticketCounts(disabled.dir);
       expect(after).toEqual(before);
       const version = new DatabaseSync(path.join(disabled.dir, 'directory.sqlite'));
-      try { expect(version.prepare('PRAGMA user_version').get()!.user_version).toBe(13); } finally { version.close(); }
+      try { expect(version.prepare('PRAGMA user_version').get()!.user_version).toBe(MIGRATIONS.length); } finally { version.close(); }
     } finally {
       await disabled.cleanup();
     }

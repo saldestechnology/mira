@@ -475,6 +475,7 @@ describe('local restore drill (runbook section 8)', () => {
     const res = await c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: list.backups[0].name, confirm: CONFIRM });
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('unknown_key');
+    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
     await sleep(300);
     expect(relay.proc.exitCode).toBeNull();
     expect(liveFiles(dir)).toEqual(before);
@@ -499,6 +500,7 @@ describe('local restore drill (runbook section 8)', () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('tamper');
     expect(res.body.message).toMatch(/\w+/);
+    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
     await sleep(300);
     expect(relay.proc.exitCode).toBeNull();
     expect(liveFiles(dir)).toEqual(before);

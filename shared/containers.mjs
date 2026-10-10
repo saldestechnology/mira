@@ -67,7 +67,7 @@ export function isDueDate(value) {
 }
 
 /** Board features this code understands. A board that lists another one opens read-only (docs/kanban.md, Version skew). */
-export const FEATURES = Object.freeze({ containers: 'containers' });
+export const FEATURES = Object.freeze({ containers: 'containers', tracker: 'tracker' });
 export const KNOWN_FEATURES = Object.freeze(Object.values(FEATURES));
 
 /**

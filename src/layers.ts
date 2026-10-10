@@ -16,7 +16,7 @@ import type { ZPatch } from './z-order';
 export const CONTAINERS = new Set<string>(['frame', 'container', 'lane']);
 
 export const TYPE_LABEL: Record<string, string> = {
-  shape: 'Shape', sticky: 'Sticky note', text: 'Text', frame: 'Frame', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector',
+  shape: 'Shape', sticky: 'Sticky note', text: 'Text', frame: 'Frame', tracker: 'Tracker', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector',
   container: 'Board', lane: 'Lane', card: 'Card', group: 'Group',
   'uml-class': 'Class', 'uml-actor': 'Actor', 'uml-usecase': 'Use case', 'uml-lifeline': 'Lifeline', 'uml-note': 'Note',
   'uml-package': 'Package', 'uml-state': 'State', 'uml-initial': 'Initial node', 'uml-final': 'Final node', 'uml-component': 'Component',
@@ -71,7 +71,7 @@ export function cleanName(raw: string): string | undefined {
 
 const byZ = (a: Obj, b: Obj) => (a.z < b.z ? -1 : a.z > b.z ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const topFirst = (a: Obj, b: Obj) => -byZ(a, b);
-const isFrameClass = (o: Obj) => o.type === 'frame';
+export const isFrameClass = (o: { type: string }) => o.type === 'frame' || o.type === 'tracker';
 
 /**
  * The panel's rows, top first, flattened: a container is followed by its children (unless collapsed). An object whose
@@ -163,7 +163,7 @@ export function moveNextTo(objects: readonly Obj[], id: Id, target: Id, where: '
 export function moveAmongSiblings(nodes: readonly LayerNode[], objects: readonly Obj[], id: Id, direction: -1 | 1, isLaidOut: (o: Obj) => boolean): ZPatch[] | null {
   const me = nodes.find((n) => n.id === id);
   if (!me || !me.movable) return null;
-  const siblings = nodes.filter((n) => n.parent === me.parent && n.depth === me.depth && n.movable && (n.type === 'frame') === (me.type === 'frame'));
+  const siblings = nodes.filter((n) => n.parent === me.parent && n.depth === me.depth && n.movable && isFrameClass(n) === isFrameClass(me));
   const i = siblings.findIndex((n) => n.id === id);
   const next = siblings[i + direction];
   if (!next) return null;

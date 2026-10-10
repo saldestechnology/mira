@@ -18,7 +18,7 @@ export type UmlType =
   | 'uml-class' | 'uml-actor' | 'uml-usecase' | 'uml-lifeline' | 'uml-note'
   | 'uml-package' | 'uml-state' | 'uml-initial' | 'uml-final' | 'uml-component';
 
-export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'group' | 'icon' | 'image' | 'path' | 'connector' | 'container' | 'lane' | 'card' | UmlType;
+export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group' | 'icon' | 'image' | 'path' | 'connector' | 'container' | 'lane' | 'card' | UmlType;
 
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';
@@ -89,6 +89,17 @@ export interface BaseObj extends Partial<StyleFields> {
   kind?: ShapeKind;
   // a frame's title; for anything else the name the layers panel shows (TAB-198)
   name?: string;
+  /** Read-only TABULA projection fields on linked cards; trackerId also selects a workspace on tracker frames. */
+  extProvider?: 'tabula';
+  extKey?: string;
+  extUrl?: string;
+  trackerId?: string;
+  /** Default tracker tab for this frame: navigation state only. */
+  view?: 'inbox' | 'my' | 'all' | 'board' | 'projects';
+  /** Saved tracker view selected by this frame: navigation state only. */
+  viewId?: string;
+  /** Ticket key opened by default in this frame: navigation state only. */
+  focusKey?: string;
   // icon
   ref?: string;
   body?: string;
@@ -111,6 +122,8 @@ export interface BaseObj extends Partial<StyleFields> {
   privateStep?: Id;
   // container (docs/kanban.md). `parent` says which lane or container, `rank` is `<key>@<parent>`.
   layout?: string;
+  /** Server-written TABULA tracker link for a kanban container. */
+  ext?: { provider: 'tabula'; tracker: string; map: Record<string, string> };
   rank?: string;
   laneW?: number;
   stage?: typeof STAGES[number];

@@ -1,13 +1,13 @@
-/* AI tool access: a dialog of flush-left type, one 2px rule and hairlines. Theme variables only; radius 0, no shadows.
+/* AI tool access: a dialog of flush-left type, one 2px rule and hairlines. Theme variables only; dialog and control radius tokens, no shadows.
    The Access tokens tab in the admin dashboard reuses the admin-* classes and adds nothing here. */
 
 .tokens-dialog {
-  width: min(640px, 100%); border-radius: 0; box-shadow: none;
+  width: min(640px, 100%); border-radius: var(--radius-lg); box-shadow: none;
   border: 1px solid var(--tray-line); border-top: 2px solid var(--tray-text);
 }
 .tokens-dialog .modal-head { padding: 16px 16px 8px 24px; }
 .tokens-dialog .modal-head h2 { font: 800 20px/1.2 var(--display); letter-spacing: -0.02em; }
-.tokens-dialog .icon-btn { border-radius: 0; }
+.tokens-dialog .icon-btn { border-radius: var(--radius-sm); }
 .tokens-dialog .modal-body { padding: 8px 24px 24px; }
 
 .tokens { display: grid; gap: 24px; min-width: 0; }
@@ -23,14 +23,14 @@
 .tokens-label { margin-bottom: 8px; color: var(--tray-muted); }
 
 .tokens-field { min-width: 0; }
-.tokens-dialog .input { height: 32px; padding: 0 8px; border-radius: 0; border: 1px solid var(--tray-line); }
+.tokens-dialog .input { height: 32px; padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--tray-line); }
 .tokens-dialog .input:focus { border-color: var(--tray-text); }
 .tokens-dialog :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 
-/* Exclusive options: rectangles on hairlines; the chosen one is the one signal fill. */
+/* Exclusive options: compact controls on hairlines; the chosen one is the one signal fill. */
 .tokens-opts { display: flex; flex-wrap: wrap; gap: 8px; }
 .tokens-opt {
-  height: 32px; padding: 0 12px; border: 1px solid var(--tray-line); border-radius: 0; background: none; color: var(--tray-text);
+  height: 32px; padding: 0 12px; border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: none; color: var(--tray-text);
   font-size: 13px; font-weight: 600;
 }
 .tokens-opt:hover { border-color: var(--tray-text); }
@@ -50,7 +50,7 @@
 .tokens-list > :first-child { border-top: 0; }
 .tokens-who { min-width: 0; }
 .tokens-name { font-weight: 600; overflow-wrap: anywhere; }
-.tokens-badge { display: inline-block; margin-left: 8px; padding: 0 6px; border: 1px solid var(--tray-text); line-height: 18px; vertical-align: 1px; }
+.tokens-badge { display: inline-block; margin-left: 8px; padding: 0 6px; border: 1px solid var(--tray-text); border-radius: var(--radius-xs); line-height: 18px; vertical-align: 1px; }
 .tokens-meta { margin-top: 8px; color: var(--tray-muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 
 .tokens-error {
@@ -68,10 +68,10 @@
   font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all;
 }
 
-/* Buttons: rectangular, 32px. Default is an outline that inverts on hover; primary is the one signal fill. */
+/* Buttons: compact, 32px. Default is an outline that inverts on hover; primary is the one signal fill. */
 .tokens-dialog .btn-row { gap: 8px; }
 .tokens-dialog .btn {
-  height: 32px; padding: 0 12px; border: 1px solid var(--tray-text); border-radius: 0; background: none; color: var(--tray-text);
+  height: 32px; padding: 0 12px; border: 1px solid var(--tray-text); border-radius: var(--radius-sm); background: none; color: var(--tray-text);
   font-size: 13px; font-weight: 600;
 }
 .tokens-dialog .btn:not(:disabled):hover { background: var(--tray-text); color: var(--tray); }

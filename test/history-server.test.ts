@@ -257,7 +257,6 @@ describe('version history in open mode', { timeout: 40_000 }, () => {
     await synced(c);
     c.doc.getMap('threads').set('t1', new Y.Map(Object.entries({ id: 't1', text: 'hello' })));
     await until(() => fs.existsSync(path.join(s.dir, `${board}~comments.yjs`)));
-    await sleep(300);
     expect(fs.existsSync(path.join(s.dir, 'history', board))).toBe(false);
     expect(fs.existsSync(path.join(s.dir, 'history', `${board}~comments`))).toBe(false);
   });

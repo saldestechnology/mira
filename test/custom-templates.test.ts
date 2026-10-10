@@ -316,6 +316,8 @@ describe('validateContent', () => {
     expect(run(c)).toThrow(/unknown type/);
     (c.objects[1] as { type: string }).type = 'constructor';
     expect(run(c)).toThrow(/unknown type/);
+    (c.objects[1] as { type: string }).type = 'tracker';
+    expect(run(c)).toThrow(/Templates cannot contain tracker frames/);
   });
 
   it('rejects a parent that is not in the template', () => {

@@ -1,11 +1,11 @@
-/* Board chat (docs/chat.md, Interface): the Chat tab of the side tray. Swiss: theme variables only, radius 0, no
-   shadows, hairlines and 2px rules, 11px uppercase labels, an 8px grid. --signal marks only Send and the active tab. */
+/* Board chat (docs/chat.md, Interface): the Chat tab of the side tray. Swiss: theme variables only, radius tokens by role,
+   no shadows, hairlines and 2px rules, 11px uppercase labels, an 8px grid. --signal marks only Send and the active tab. */
 
 /* the Chat button and its unread badge (a red outline when someone mentions you) */
 .chat-toggle { position: relative; }
 .chat-count {
   display: none; position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
-  border-radius: 0; background: var(--tray-text); color: var(--tray); font-size: 10px; font-weight: 700; line-height: 16px;
+  border-radius: var(--radius-xs); background: var(--tray-text); color: var(--tray); font-size: 10px; font-weight: 700; line-height: 16px;
   text-align: center; pointer-events: none;
 }
 .chat-count.show { display: block; }
@@ -28,6 +28,10 @@
 .chat-log:focus-visible { outline: 2px solid var(--tray-text); outline-offset: -2px; }
 .chat-older { padding: 8px 16px; color: var(--tray-muted); font-size: 12px; line-height: 16px; }
 .chat-older:empty { display: none; }
+/* An empty workspace channel: a centred block of three short lines in the tray text colours, no picture. */
+.chat-log.has-welcome { display: flex; flex-direction: column; }
+.chat-older.chat-welcome { flex: 1 1 auto; display: grid; align-content: center; justify-items: center; gap: 4px; padding: 32px 24px; color: var(--tray-muted); font-size: 13px; line-height: 18px; text-align: center; }
+.chat-welcome-title { color: var(--tray-text); font-size: 15px; font-weight: 700; line-height: 20px; }
 
 /* date line and the New messages line: labels on a rule */
 .chat-day, .chat-new {
@@ -47,7 +51,7 @@
 .chat-msg:hover, .chat-msg:focus-within { background: var(--tray-hover); }
 .chat-gutter { width: 24px; }
 .chat-avatar {
-  width: 24px; height: 24px; margin-top: 2px; border-radius: 0; background: var(--c, var(--tray-2)); color: #fff;
+  width: 24px; height: 24px; margin-top: 2px; border-radius: 50%; background: var(--c, var(--tray-2)); color: #fff;
   display: grid; place-items: center; font: 700 10px/1 var(--ui); letter-spacing: 0.02em;
 }
 .chat-main { min-width: 0; }
@@ -60,7 +64,7 @@
 .chat-edited { color: var(--tray-muted); font-size: 11px; }
 .chat-link { color: var(--tray-text); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-all; }
 .chat-link:hover { text-decoration-thickness: 2px; }
-.chat-mention { padding: 0 2px; background: var(--tray-2); color: var(--tray-text); font-weight: 600; white-space: nowrap; }
+.chat-mention { padding: 0 2px; border-radius: var(--radius-xs); background: var(--tray-2); color: var(--tray-text); font-weight: 600; white-space: nowrap; }
 .chat-mention.me { text-decoration: underline 2px; text-underline-offset: 3px; }
 .chat-quote {
   display: flex; gap: 8px; min-width: 0; margin: 2px 0 4px; padding-left: 8px; border-left: 2px solid var(--tray-line);
@@ -79,17 +83,17 @@
 .chat-msg.failed .chat-text { color: var(--tray-text); }
 .chat-msg.failed .chat-state { padding-left: 8px; border-left: 2px solid var(--danger); color: var(--tray-text); }
 .chat-action {
-  padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--tray-text); font: inherit; font-weight: 600;
+  padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-text); font: inherit; font-weight: 600;
   text-decoration: underline; text-underline-offset: 2px;
 }
 .chat-action:hover { text-decoration-thickness: 2px; }
 
 .chat-edit { margin-top: 4px; }
 .chat-edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 8px 0 4px; }
-.chat-edit-actions .btn.small { height: 32px; padding: 0 12px; border-radius: 0; font-size: 12.5px; }
+.chat-edit-actions .btn.small { height: 32px; padding: 0 12px; border-radius: var(--radius-sm); font-size: 12.5px; }
 
 .chat-jump {
-  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); height: 32px; padding: 0 16px; border-radius: 0;
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); height: 32px; padding: 0 16px; border-radius: var(--radius-sm);
   border: 1px solid var(--tray-text); background: var(--tray); color: var(--tray-text);
   font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
 }
@@ -102,7 +106,7 @@
   border-top: 2px solid var(--tray-text);
 }
 .chat-panel .chat-input {
-  display: block; width: 100%; min-height: 38px; resize: none; overflow-y: hidden; border-radius: 0;
+  display: block; width: 100%; min-height: 38px; resize: none; overflow-y: hidden; border-radius: var(--radius-sm);
   padding: 8px; font-size: 14px; line-height: 20px;
 }
 .chat-panel .chat-input:focus { border-color: var(--tray-text); }
@@ -110,7 +114,7 @@
 .chat-compose-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
 .chat-note { flex: 1; min-width: 0; margin: 0; color: var(--tray-muted); font-size: 12px; line-height: 16px; }
 .chat-note.over { color: var(--tray-text); font-weight: 600; }
-.chat-send.btn { height: 32px; padding: 0 16px; border-radius: 0; }
+.chat-send.btn { height: 32px; padding: 0 16px; border-radius: var(--radius-sm); }
 .chat-replying {
   display: flex; align-items: center; gap: 8px; min-width: 0; padding-left: 8px; border-left: 2px solid var(--tray-text);
   font-size: 12px; line-height: 16px;
@@ -153,7 +157,7 @@
 .chat-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 0; }
 .chat-reaction {
   display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; box-sizing: border-box;
-  border: 1px solid var(--tray-line); border-radius: 0; background: transparent; color: var(--tray-text);
+  border: 1px solid var(--tray-line); border-radius: var(--radius-xs); background: transparent; color: var(--tray-text);
   font: 600 12px/1 var(--ui); cursor: pointer;
 }
 .chat-reaction:hover:not(:disabled) { background: var(--tray-hover); }
@@ -173,7 +177,7 @@
    and the chip that attach the selected object to the next message */
 .chat-object {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 24px; margin: 4px 0 0; padding: 0 8px; box-sizing: border-box;
-  border: 1px solid var(--tray-text); border-radius: 0; background: transparent; color: var(--tray-text);
+  border: 1px solid var(--tray-text); border-radius: var(--radius-xs); background: transparent; color: var(--tray-text);
   font: 600 12px/1 var(--ui); text-decoration: none; cursor: pointer;
 }
 .chat-object > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -187,7 +191,7 @@
 }
 .chat-attached[hidden] { display: none; }
 .chat-attached-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-attach-btn.btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--tray-line); border-radius: 0; background: transparent; color: var(--tray-text); font-size: 12.5px; }
+.chat-attach-btn.btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: transparent; color: var(--tray-text); font-size: 12.5px; }
 .chat-attach-btn.btn:hover:not(:disabled) { background: var(--tray-hover); }
 .chat-attach-btn[hidden] { display: none; }
 .chat-page .chat-object { border-color: var(--ink); }

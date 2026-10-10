@@ -17,12 +17,40 @@ export function cleanCode(value: string): string {
   return value.replace(/\s+/g, '').toUpperCase().slice(0, 8);
 }
 
+function cleanName(value: string): string {
+  return value.normalize('NFC').replace(/[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/gu, ' ').trim();
+}
+
+function clearJoinCodeFromUrl(): void {
+  if (typeof window === 'undefined' || !window.location || !window.history) return;
+  const { location, history } = window;
+  if (typeof location.search !== 'string' || typeof history.replaceState !== 'function') return;
+  const search = new URLSearchParams(location.search);
+  const hasSearchCode = search.has('c');
+  if (hasSearchCode) search.delete('c');
+
+  let hash = location.hash;
+  const hashQueryAt = hash.indexOf('?');
+  if (hashQueryAt >= 0 && hash.slice(0, hashQueryAt) === '#/join') {
+    const hashQuery = new URLSearchParams(hash.slice(hashQueryAt + 1));
+    if (hashQuery.has('c')) {
+      hashQuery.delete('c');
+      const query = hashQuery.toString();
+      hash = `${hash.slice(0, hashQueryAt)}${query ? `?${query}` : ''}`;
+    }
+  }
+
+  if (!hasSearchCode && hash === location.hash) return;
+  const query = search.toString();
+  history.replaceState(history.state, '', `${location.pathname}${query ? `?${query}` : ''}${hash}`);
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 404 || error.code === 'invalid_join_code') return INVALID;
     if (error.status === 429) return 'Too many attempts. Wait a minute and try again.';
     if (error.status === 0 || error.code === 'network') return NETWORK;
-    if (error.code === 'bad_request') return 'Enter a name of 1 to 40 characters.';
+    if (error.code === 'bad_request') return 'Use 1 to 40 characters';
   }
   return 'Could not join this board. Try again.';
 }
@@ -80,6 +108,7 @@ export function renderJoin(root: HTMLElement, initialCode: string, done: (guest:
   });
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    clearJoinCodeFromUrl();
     error?.remove();
     error = null;
     clearInlineErrors();
@@ -92,14 +121,19 @@ export function renderJoin(root: HTMLElement, initialCode: string, done: (guest:
       showInlineError('code', 'That code looks too short');
       return;
     }
-    if (!name.value.trim()) {
+    const cleanedName = cleanName(name.value);
+    if (!cleanedName) {
       showInlineError('name', 'Enter a display name');
+      return;
+    }
+    if ([...cleanedName].length > 40) {
+      showInlineError('name', 'Use 1 to 40 characters');
       return;
     }
     submit.disabled = true;
     submit.textContent = 'Joining…';
     try {
-      const joined = await api.joinWithCode(cleanCode(code.value), name.value);
+      const joined = await api.joinWithCode(cleanCode(code.value), cleanedName);
       setGuest(joined);
       done(joined);
     } catch (err) {

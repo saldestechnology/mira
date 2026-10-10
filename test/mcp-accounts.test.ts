@@ -974,31 +974,8 @@ describe('board text is data', () => {
 // ---------------------------------------------------------------- limits
 
 describe('limits', () => {
-  it('limits calls and mutating calls per token, with Retry-After', async () => {
-    const me = await newMember();
-    const token = await tokenOf(me, 'write');
-    const mine = await h.newBoard(me.cookie);
-    const answers = [];
-    for (let i = 0; i < 31; i++) {
-      answers.push(await h.call(token, 'tools/call', { name: 'create_objects', arguments: { boardId: mine, objects: [sticky()] } }));
-    }
-    expect(answers.map((a) => a.status).filter((s) => s === 200)).toHaveLength(30);
-    expect(answers[30].status).toBe(429);
-    expect(Number(answers[30].headers.get('retry-after'))).toBeGreaterThan(0);
-    expect(answers[30].body.error.data).toMatchObject({ error: 'rate_limited' });
-    expect(answers[30].body.id).toBeTypeOf('number');
-    // reads are still allowed, until their own limit
-    expect((await h.call(token, 'tools/call', { name: 'get_board', arguments: { boardId: mine } })).status).toBe(200);
-    const other = await tokenOf(me, 'write');
-    expect((await h.call(other, 'ping')).status).toBe(200);
-
-    const reader = await tokenOf(me, 'read');
-    let limited = 0;
-    for (let i = 0; i < 125; i++) if ((await h.call(reader, 'ping')).status === 429) limited++;
-    expect(limited).toBeGreaterThan(0);
-    expect(limited).toBeLessThanOrEqual(6);
-  });
-
+  // Call/write window boundaries are exercised with an injected clock in mcp-limiter-eviction.test.ts.
+  // Fake timers here would not control the relay child process, so keep the HTTP auth integration below.
   it('limits wrong tokens per address, and never holds back a good one', async () => {
     const ip = h.nextIp();
     const { token } = await h.newToken(bob.cookie, { scope: 'read' });

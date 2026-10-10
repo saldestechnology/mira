@@ -68,6 +68,13 @@ describe('create', () => {
     expect(err.path).toBe('objects[0].type');
   });
 
+  it('refuses app-owned tracker frame creation with a clear error', () => {
+    const err = failure(() => planCreate(new Y.Doc(), [{ type: 'tracker', x: 0, y: 0 }], who));
+    expect(err.code).toBe('invalid_input');
+    expect(err.path).toBe('objects[0].type');
+    expect(err.message).toContain('Tracker frames can only be created by the app');
+  });
+
   it('writes every object type in a form the real Store loads', () => {
     const d = new Y.Doc();
     const store = new Store(d);
@@ -1356,5 +1363,21 @@ describe('kanban creation', () => {
       for (let i = 0; i < LIMITS.boardObjects - 3; i++) objects.set(`object-${i}`, new Y.Map([['id', `object-${i}`], ['type', 'shape']]));
     });
     expect(failure(() => planCreateKanban(fullBoard, {}, who))).toMatchObject({ code: 'limit_exceeded', path: 'lanes' });
+  });
+});
+
+describe('tracker frame summaries', () => {
+  it('returns the tracker navigation fields in board summaries and object details', () => {
+    const d = new Y.Doc();
+    seed(d, boardObject('tracker-1', 'tracker', {
+      trackerId: 'workspace_1', view: 'projects', viewId: 'saved_2', focusKey: 'TAB-42',
+    }));
+
+    const summary = summariseBoard(d).objects[0] as Record<string, unknown>;
+    const detail = getObjectsDetail(d, ['tracker-1']).objects[0] as Record<string, unknown>;
+    for (const item of [summary, detail]) {
+      expect(item).toMatchObject({ type: 'tracker', trackerId: 'workspace_1', view: 'projects', focusKey: 'TAB-42' });
+      expect(item).not.toHaveProperty('viewId');
+    }
   });
 });

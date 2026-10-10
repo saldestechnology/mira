@@ -104,8 +104,8 @@ describe('stopping a snapshot', () => {
     const order: string[] = [];
     const snapshot = barrier.withSnapshot({ signal: stop.signal, capture: () => new Promise(() => {}) }).catch((err) => order.push(`snapshot:${err.name}`));
     await Promise.resolve();
+    expect(barrier.active).toBe(true);
     const writer = barrier.runWriter(() => order.push('write'));
-    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(order).toEqual([]);
     stop.abort();
     await snapshot;

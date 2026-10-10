@@ -68,7 +68,10 @@ function connect(board: string): Promise<Socket> {
     if (decoding.readVarUint(dec) === MSG_AI_RUNS) sock.runs.push(JSON.parse(decoding.readVarString(dec)));
   });
   return new Promise((resolve, reject) => {
-    ws.once('open', () => resolve(sock));
+    ws.once('open', () => {
+      ws.once('pong', () => resolve(sock));
+      ws.ping();
+    });
     ws.once('error', reject);
   });
 }
@@ -129,8 +132,7 @@ describe('live AI runs through the relay', () => {
     const b = await connect('board1');
     const other = await connect('board2');
     sockets.push(a.ws, b.ws, other.ws);
-    // nothing is open yet, so nobody got a snapshot
-    await new Promise((r) => setTimeout(r, 100));
+    // The WebSocket ping/pong in connect confirms the relay processed each join before this negative assertion.
     expect([a.runs, b.runs]).toEqual([[], []]);
 
     provider.state.hold();
@@ -165,7 +167,6 @@ describe('live AI runs through the relay', () => {
     // a settled run is not in the snapshot of the next socket
     const after = await connect('board1');
     sockets.push(after.ws);
-    await new Promise((r) => setTimeout(r, 100));
     expect(after.runs).toEqual([]);
     expect(provider.state.requests).toBe(1);
   }, 60_000);

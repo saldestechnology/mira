@@ -76,7 +76,7 @@ export function codePointLength(value: string): number;
 export function isSafeHttpUrl(value: unknown): value is string;
 export function isDueDate(value: unknown): value is string;
 
-export const FEATURES: { readonly containers: 'containers' };
+export const FEATURES: { readonly containers: 'containers'; readonly tracker: 'tracker' };
 export const KNOWN_FEATURES: readonly string[];
 export const FEATURE_PREFIX: 'feature:';
 export function featureKey(name: string): string;

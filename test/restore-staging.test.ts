@@ -1,3 +1,4 @@
+import { migrationSql } from '../server/schema.mjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -207,7 +208,7 @@ describe('a database that cannot be used is refused', () => {
   it('a schema written by a newer Tabula', async () => {
     const s = await scenario();
     const newer = await sqliteBytes((db) => {
-      for (const sql of MIGRATIONS) db.exec(sql);
+      for (const entry of MIGRATIONS) db.exec(migrationSql(entry));
       db.exec(`PRAGMA user_version = ${MIGRATIONS.length + 1}`);
     });
     const forged = await withDatabase(s, newer, T0 + 10 * HOUR);
@@ -250,7 +251,7 @@ describe('a database that cannot be used is refused', () => {
   it('a database whose owners are all disabled, which nobody could sign in to', async () => {
     const s = await scenario();
     const locked = await sqliteBytes((db) => {
-      for (const sql of MIGRATIONS) db.exec(sql);
+      for (const entry of MIGRATIONS) db.exec(migrationSql(entry));
       db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
       db.exec("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'owner@example.com', 'Owner', 'owner', 1, 1)");
     });
@@ -262,7 +263,7 @@ describe('a database that cannot be used is refused', () => {
   it('an older schema is fine and is migrated before the swap', async () => {
     const s = await scenario();
     const older = await sqliteBytes((db) => {
-      for (let i = 0; i < 4; i++) db.exec(MIGRATIONS[i]);
+      for (let i = 0; i < 4; i++) db.exec(migrationSql(MIGRATIONS[i]));
       db.exec('PRAGMA user_version = 4');
       db.exec("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'owner@example.com', 'Owner', 'owner', 0, 1)");
     });

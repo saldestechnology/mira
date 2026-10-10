@@ -1,10 +1,10 @@
 /* Version history: a list of saved versions and a read-only preview. Swiss rules as in the admin dashboard:
-   hairlines and 2px rules, no radius, no shadow, 11px uppercase labels, an 8px grid. Theme variables only. */
+   hairlines and 2px rules, a medium tray radius and small control radii, no shadow, 11px uppercase labels, an 8px grid. Theme variables only. */
 
 .history-panel {
   position: absolute; top: var(--panel-top); right: calc(12px + var(--safe-right)); bottom: calc(72px + var(--safe-bottom)); width: 320px; z-index: 3; display: none; flex-direction: column; min-height: 0;
   box-sizing: border-box; background: var(--tray); color: var(--tray-text); color-scheme: dark;
-  border: 1px solid var(--tray-line); border-radius: 0; box-shadow: none; outline: none;
+  border: 1px solid var(--tray-line); border-radius: var(--radius-md); box-shadow: none; outline: none;
 }
 .history-panel.show { display: flex; }
 .chrome.history-previewing > :not(.history-panel) { visibility: hidden; }
@@ -16,7 +16,7 @@
 }
 .history-head h2 { margin: 0; font: 700 16px var(--display); letter-spacing: 0.01em; }
 .history-icon {
-  display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 0;
+  display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--radius-sm);
   background: transparent; color: inherit;
 }
 .history-icon:hover { background: var(--tray-hover); }
@@ -27,14 +27,14 @@
 }
 .history-tabs { display: flex; gap: 16px; }
 .history-tab {
-  height: 32px; padding: 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent;
+  height: 32px; padding: 0; border: 0; border-bottom: 2px solid transparent; border-radius: var(--radius-sm); background: transparent;
   color: var(--tray-muted); font: 600 11px var(--ui); letter-spacing: 0.08em; text-transform: uppercase;
 }
 .history-tab:hover { color: var(--tray-text); }
 .history-tab.on { color: var(--tray-text); border-bottom-color: var(--signal); }
 
 .history-btn {
-  display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 16px; border-radius: 0;
+  display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 16px; border-radius: var(--radius-sm);
   border: 1px solid var(--tray-line); background: transparent; color: var(--tray-text); font: 600 13px var(--ui); white-space: nowrap;
 }
 .history-btn:hover:not(:disabled) { background: var(--tray-hover); }
@@ -50,7 +50,7 @@
 .history-body > .history-item:first-child { border-top: 0; }
 .history-row {
   display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; width: 100%; padding: 8px 16px 8px 14px;
-  border: 0; border-left: 2px solid transparent; border-radius: 0; background: transparent; color: inherit;
+  border: 0; border-left: 2px solid transparent; border-radius: var(--radius-sm); background: transparent; color: inherit;
   font: 13px/1.4 var(--ui); text-align: left;
 }
 .history-row:hover { background: var(--tray-hover); }
@@ -63,7 +63,7 @@
 
 .history-row-actions { display: flex; gap: 16px; padding: 0 16px 8px 80px; }
 .history-link {
-  height: 24px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--tray-muted);
+  height: 24px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted);
   font: 600 11px var(--ui); letter-spacing: 0.08em; text-transform: uppercase;
 }
 .history-link:hover:not(:disabled) { color: var(--tray-text); }

@@ -6,7 +6,7 @@ import { lowDetail, type FilterChip } from './ui/kanban-logic';
 import type { Store } from './store';
 import type { ImageState } from './image-loader';
 import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
-import { SVG_DEFS, objectMarkup, type MarkupCtx } from './markup';
+import { SVG_DEFS, objectMarkup, placeholderZoom, type MarkupCtx } from './markup';
 import { clearMeasureCache, escapeXml } from './text';
 import { onFontLoaded } from './fonts';
 import { USER_COLORS, WIRE } from './palette';
@@ -158,7 +158,7 @@ export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: n
   // a text: the sides change the wrap width, the corners scale the type (src/text-resize.ts); its height follows its lines
   if (o.type === 'text') hs = all.filter((h) => h.id === 'e' || h.id === 'w' || h.id.length === 2);
   if (o.type === 'uml-initial' || o.type === 'uml-final') hs = all.filter((h) => h.id.length === 2);
-  if (o.type !== 'frame' && o.type !== 'uml-lifeline' && o.type !== 'uml-package') {
+  if (o.type !== 'frame' && o.type !== 'tracker' && o.type !== 'uml-lifeline' && o.type !== 'uml-package') {
     hs = [...hs, { id: 'rot', p: L(o.w / 2, -24 / zoom) }];
   }
   return hs;
@@ -401,11 +401,19 @@ export class Renderer {
 
   setCamera(c: Partial<Camera>) {
     const low = lowDetail(this.cam.zoom);
+    const step = placeholderZoom(this.cam.zoom);
     this.cam = { ...this.cam, ...c };
     this.cam.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.cam.zoom));
     // a kanban draws differently below zoom 0.4, so crossing it redraws what is on screen of every kanban
     if (lowDetail(this.cam.zoom) !== low) {
       for (const id of this.els.keys()) if (isContainerType(this.store.get(id)?.type ?? '')) this.markDirty(id);
+    }
+    // a placeholder's label keeps 12 px on screen, so it is drawn again when the zoom moves to another step
+    if (placeholderZoom(this.cam.zoom) !== step) {
+      for (const id of this.els.keys()) {
+        const o = this.store.get(id);
+        if (o?.type === 'image' && this.imageState(o).kind !== 'ok') this.markDirty(id);
+      }
     }
     this.camDirty = true;
     this.overlayDirty = true;
@@ -698,7 +706,7 @@ export class Renderer {
     if (entered?.type === 'group' && enteredBounds) {
       const v = this.viewport();
       const memberBounds = this.store.descendantsOf(entered.id)
-        .filter((member) => member.type !== 'group' && member.type !== 'frame' && isBox(member) && this.store.isShown(member) && !this.isHidden(member))
+        .filter((member) => member.type !== 'group' && member.type !== 'frame' && member.type !== 'tracker' && isBox(member) && this.store.isShown(member) && !this.isHidden(member))
         .map((member) => this.bounds(member))
         .filter((bounds): bounds is Rect => !!bounds);
       const cutouts = memberBounds.map((b) => `M${b.x} ${b.y}h${b.w}v${b.h}h-${b.w}z`).join(' ');

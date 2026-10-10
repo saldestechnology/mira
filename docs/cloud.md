@@ -4,6 +4,8 @@ Tabula can run as one workspace of a hosted service: a separate control plane (b
 
 Not in it: creating or deleting the instance, Stripe, routing. Those belong to the control plane.
 
+Fly's edge replays hosted requests, but Fly cannot replay request bodies over 1 MB; TAB-127 documents how image uploads stay visible and retry.
+
 ## Turning it on
 
 | Variable | Meaning |
@@ -13,6 +15,8 @@ Not in it: creating or deleting the instance, Stripe, routing. Those belong to t
 | `TABULA_CLOUD_WORKSPACE_ID` | This workspace's id at the control plane (letters, digits, `.`, `-`, `_`, up to 128). Used in the path of the instance's calls |
 
 Cloud mode is on only when `TABULA_AUTH=on` **and** all three are set.
+
+A hosted workspace runs accounts mode, so it has team chat (docs/chat.md) with no variable: chat is on by default there, `chat.sqlite` is created on first use and is in the backups, and `TABULA_CHAT=off` is the operator's opt-out. A workspace gets it when it moves to an image that has this default.
 
 - None set: nothing changes, the routes below answer `404`.
 - Some but not all set: the relay refuses to start and names the missing variables. A token that is too short, a URL that is not allowed or an id that does not fit refuse startup too.

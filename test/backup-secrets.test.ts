@@ -160,7 +160,7 @@ describe('nothing the engine says contains a secret', () => {
     await engine.readObject(manifest.files[0].objectId).catch((err) => record('tampered object', err));
 
     // 6. credentials in the endpoint, which the configuration refuses but a hand-made one might carry
-    const base = loadBackupConfig(envFor(h.fake), () => {})!;
+    const base = h.config()!;
     const withUserInfo = Object.create(base, { endpoint: { value: h.fake.url.replace('http://', `http://${ENDPOINT_USER}:${ENDPOINT_PASSWORD}@`) } });
     const userInfoEngine = createBackup({ config: withUserInfo, dataDir: h.dir, directory, log: (...a: unknown[]) => h.logs.push(a.join(' ')), now: () => h.clock.now, backoffMs: [0] })!;
     record('endpoint with credentials', await userInfoEngine.runNow());
