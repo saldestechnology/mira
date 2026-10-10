@@ -99,7 +99,7 @@ Tabula was called Mira before: the old `MIRA_*` names of these variables still w
 | `TABULA_SESSION_DAYS` | `30` | Session lifetime |
 | `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy: the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. Leave it off without a proxy, because anyone can forge that header |
 | `TABULA_CLIENT_IP_HEADER` | `x-forwarded-for` | With `TABULA_TRUST_PROXY=1`: which header holds the client address, `x-forwarded-for` (its rightmost entry) or `fly-client-ip` (on Fly, see `docs/cloud.md`, Client addresses) |
-| `TABULA_CHAT` | `off` | Set to `on` to enable board, team and workspace chat in accounts mode |
+| `TABULA_CHAT` | `on` in accounts mode | Board, team and workspace chat. Set to `off` to turn it off; open mode never has chat |
 | `TABULA_JOIN_CODES` | `off` | Set to `on` to allow board-scoped guest join codes in accounts mode |
 
 ### Hosted workspaces
