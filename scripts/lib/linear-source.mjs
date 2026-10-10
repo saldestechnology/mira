@@ -18,7 +18,7 @@ const CONNECTIONS = Object.freeze({
   cycles: { field: 'cycles', type: 'Cycle', selection: 'id name description startsAt endsAt completedAt archivedAt team { id }' },
   milestones: { field: 'projectMilestones', type: 'ProjectMilestone', selection: 'id name description targetDate project { id } createdAt updatedAt archivedAt' },
   issues: { field: 'issues', type: 'Issue', selection: 'id identifier number title description priority estimate state { id name type } assignee { id name email } creator { id name email } labels { nodes { id name color } } project { id } cycle { id } projectMilestone { id } parent { id } dueDate createdAt updatedAt archivedAt completedAt canceledAt url team { id key name private }' },
-  comments: { field: 'comments', type: 'Comment', selection: 'id body createdAt updatedAt deletedAt user { id name email } parent { id } issue { id }' },
+  comments: { field: 'comments', type: 'Comment', selection: 'id body createdAt updatedAt deletedAt: archivedAt user { id name email } parent { id } issue { id }' },
   relations: { field: 'issueRelations', type: 'IssueRelation', selection: 'id type issue { id } relatedIssue { id }' },
   attachments: { field: 'attachments', type: 'Attachment', selection: 'id url title issue { id }' },
 });
