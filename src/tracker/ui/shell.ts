@@ -9,7 +9,7 @@ import { avatar, keyChip, labelChip, relativeTime, dueChip } from './primitives'
 import { priorityGlyph, priorityLabel, stateGlyph } from './glyphs';
 import { buildListModel, moveCursor, moveCursorTo, selectAll, toggleSelection, extendSelection, type ListFacets, type ListGroupBy, type ListRenderModel, type ListSortPlan, type TrackerRow } from './list-model';
 import { buildCommandItems, openCommandBox, type CommandItem } from './command-box';
-import { resolveKey, SHORTCUTS, type KeyboardLayer, type TrackerAction } from './keys';
+import { isNativeActivationTarget, resolveKey, SHORTCUTS, type KeyboardLayer, type TrackerAction } from './keys';
 import { openPicker, type PickerResult } from './picker';
 import { openNewIssueDialog } from './new-issue';
 import { publishTrackerSnapshot } from './frame-snapshot';
@@ -1114,7 +1114,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const target = event.target as HTMLElement | null;
     if (target?.closest('[role="dialog"][aria-modal="true"]')) return;
     if (!fullScreen && !root.contains(target) && !target?.closest('.trk-pop')) return;
-    if (state.tab === 'my' && !isTextTarget(event.target) && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === '[' || event.key === ']')) {
+    if (state.tab === 'my' && !isTextTarget(event.target) && !isNativeActivationTarget(event.target) && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key === '[' || event.key === ']')) {
       event.preventDefault();
       setMySubtab(event.key === '[' ? 'active' : 'created');
       return;
@@ -1126,7 +1126,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     if (filterController?.suggestionsOpen()) layers.push('filter');
     if (document.querySelector('.trk-pop')) layers.push('picker');
     const focusOwner = isTextTarget(event.target) ? 'text' : target?.closest('.trk-pop') ? 'picker' : 'tracker';
-    const resolved = resolveKey({ active: true, focusOwner, pickerOpen: document.querySelector('.trk-pop') !== null, layers, pendingSequence }, event);
+    const gridFocus = Boolean(target?.closest('.trk-list-grid'));
+    const resolved = resolveKey({ active: true, focusOwner, gridFocus, pickerOpen: document.querySelector('.trk-pop') !== null, layers, pendingSequence }, event);
     pendingSequence = resolved.pendingSequence ?? null;
     if (resolved.action) dispatch(resolved.action);
   };

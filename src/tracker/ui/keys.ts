@@ -40,6 +40,7 @@ export interface KeyState {
   active: boolean;
   modifier?: 'meta' | 'ctrl';
   focusOwner?: 'tracker' | 'text' | 'picker' | 'dialog';
+  gridFocus?: boolean;
   pickerOpen?: boolean;
   layers?: readonly KeyboardLayer[];
   pendingSequence?: { key: 'g'; expiresAt: number } | null;
@@ -51,6 +52,12 @@ export interface KeyResolution {
 }
 
 const G_SEQUENCE_MS = 1000;
+const NATIVE_ACTIVATION_TARGET = [
+  'button', 'a[href]', 'input', 'select', 'textarea', 'summary',
+  '[role="button"]', '[role="tab"]', '[role="menuitem"]', '[role="option"]', '[role="radio"]',
+  '[role="checkbox"]', '[role="combobox"]', '[role="switch"]', '[role="spinbutton"]', '[role="slider"]',
+  '[role="link"]', '[role="listbox"]',
+].join(', ');
 const SEQUENCE_BINDINGS: Array<{ key: string; display: string; tab: TrackerTab; label: string }> = [
   { key: 'i', display: 'I', tab: 'inbox', label: 'Inbox' },
   { key: 'm', display: 'M', tab: 'my', label: 'My issues' },
@@ -104,6 +111,11 @@ const KEY_BINDINGS: Array<{
   { key: 'Delete', display: 'Delete / Backspace', shift: false, description: 'Archive ticket', action: () => ({ type: 'archive' }) },
 ];
 
+const GRID_ACTIONS = new Set<TrackerAction['type']>([
+  'move-cursor', 'group', 'open-ticket', 'peek', 'toggle-selection', 'select-all', 'open-picker', 'archive',
+  'move-to-edge', 'page', 'copy-link', 'copy-key',
+]);
+
 const MODIFIER_BINDINGS = [
   { key: 'k', display: '⌘/Ctrl+K', description: 'Open command box', action: { type: 'command-box' } as TrackerAction },
   { key: 'a', display: '⌘/Ctrl+A', description: 'Select all visible issues', action: { type: 'select-all' } as TrackerAction },
@@ -132,15 +144,25 @@ export const SHORTCUTS: readonly ShortcutRow[] = [
   ...KEY_BINDINGS.map(({ display, description }) => ({ keys: display, description })),
 ].filter((row, index, rows) => rows.findIndex((candidate) => candidate.keys === row.keys && candidate.description === row.description) === index);
 
+/** True when a key event originated in a browser-activated control or a widget with its own keyboard model. */
+export function isNativeActivationTarget(target: EventTarget | null | undefined): boolean {
+  if (!target || typeof target !== 'object') return false;
+  const element = target as EventTarget & {
+    closest?: (selector: string) => unknown;
+    parentElement?: EventTarget | null;
+  };
+  if (typeof element.closest === 'function' && element.closest(NATIVE_ACTIVATION_TARGET)) return true;
+  return element.parentElement ? isNativeActivationTarget(element.parentElement) : false;
+}
+
 function isTextOwner(state: KeyState, event: KeyEventLike): boolean {
   if (state.focusOwner === 'text' || state.focusOwner === 'picker' || state.focusOwner === 'dialog' || state.pickerOpen) return true;
   const target = event.target as (HTMLElement & { isContentEditable?: boolean }) | null;
   if (!target || typeof target !== 'object') return false;
   const tag = target.tagName?.toLowerCase();
   const listbox = target.closest?.('[role="listbox"]');
-  const inboxList = target.closest?.('.trk-inbox-list');
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable === true ||
-    Boolean(target.closest?.('[contenteditable="true"], [role="combobox"], .popover')) || Boolean(listbox && !inboxList);
+    Boolean(target.closest?.('[contenteditable="true"], [role="combobox"], .popover')) || Boolean(listbox);
 }
 
 function hasModifier(event: KeyEventLike, modifier: 'meta' | 'ctrl'): boolean {
@@ -159,11 +181,13 @@ export function resolveKey(state: KeyState, event: KeyEventLike): KeyResolution 
   if (!state.active) return { action: null, pendingSequence };
   if (key === ESCAPE_BINDING.key) return { action: ESCAPE_BINDING.action(state), pendingSequence: null };
   if (isTextOwner(state, event)) return { action: null, pendingSequence };
+  if (isNativeActivationTarget(event.target)) return { action: null, pendingSequence };
   if (pendingSequence && time > pendingSequence.expiresAt) pendingSequence = null;
 
   const modifier = state.modifier ?? PLATFORM_MODIFIER;
   if (hasModifier(event, modifier)) {
     const binding = MODIFIER_BINDINGS.find((candidate) => candidate.key === key && Boolean(candidate.shift) === Boolean(event.shiftKey) && Boolean(candidate.alt) === Boolean(event.altKey));
+    if (binding && GRID_ACTIONS.has(binding.action.type) && state.gridFocus === false) return { action: null, pendingSequence };
     if (binding) { event.preventDefault(); return { action: binding.action, pendingSequence: null }; }
   }
   if (pendingSequence) {
@@ -181,8 +205,10 @@ export function resolveKey(state: KeyState, event: KeyEventLike): KeyResolution 
   if (noModifier(event)) {
     const binding = KEY_BINDINGS.find((candidate) => candidate.key === key && (candidate.shift === undefined || candidate.shift === Boolean(event.shiftKey)));
     if (binding) {
+      const action = binding.action();
+      if (GRID_ACTIONS.has(action.type) && state.gridFocus === false) return { action: null, pendingSequence };
       event.preventDefault();
-      return { action: binding.action(), pendingSequence };
+      return { action, pendingSequence };
     }
   }
   return { action: null, pendingSequence };

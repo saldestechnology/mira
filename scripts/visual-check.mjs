@@ -1037,6 +1037,92 @@ async function assertTrackerLayout(page) {
   if (result.failures.length) throw new Error(`tracker layout: ${result.failures.join('; ')}`);
 }
 
+async function addTrackerContrastProbe(page, kind) {
+  return page.evaluate((probeKind) => {
+    if (probeKind === 'ticket') {
+      const root = document.querySelector('.tk-page');
+      const host = root?.querySelector('.tk-title-section');
+      if (!root || !host) return 'ticket page title section is missing';
+      const sample = document.createElement('div');
+      sample.className = 'tk-contrast-review';
+      const externalLink = document.createElement('a');
+      externalLink.className = 'tk-external-link';
+      externalLink.href = 'https://example.test/review/1';
+      externalLink.textContent = 'Open pull request';
+      const newComments = document.createElement('button');
+      newComments.className = 'tk-new-comments';
+      newComments.type = 'button';
+      newComments.textContent = 'New comments';
+      const externalLinkLine = document.createElement('div');
+      externalLinkLine.append(externalLink);
+      const newCommentsLine = document.createElement('div');
+      newCommentsLine.append(newComments);
+      const pending = document.createElement('article');
+      pending.className = 'tk-comment-row pending';
+      const timestamp = document.createElement('time');
+      timestamp.className = 'trk-relative-time';
+      timestamp.textContent = 'Sending…';
+      pending.append(timestamp);
+      sample.append(externalLinkLine, newCommentsLine, pending);
+      host.append(sample);
+      return null;
+    }
+    const root = document.querySelector('.trk-new-issue');
+    if (!root) return 'new issue form is missing';
+    const error = document.createElement('p');
+    error.className = 'trk-inline-error';
+    error.setAttribute('role', 'alert');
+    error.textContent = 'Could not create the issue. Try again.';
+    const reason = document.createElement('span');
+    reason.className = 'trk-create-reason';
+    reason.textContent = 'Needs a connection to get a ticket number.';
+    root.prepend(error, reason);
+    return null;
+  }, kind);
+}
+
+async function assertComputedTextContrast(page, name, selectors) {
+  const result = await page.evaluate((requested) => {
+    const parseColor = (value) => {
+      const match = value.match(/rgba?\(([^)]+)\)/i);
+      if (!match) return null;
+      const values = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
+      if (values.length < 3 || values.slice(0, 3).some((part) => !Number.isFinite(part))) return null;
+      return [values[0], values[1], values[2], values.length > 3 && Number.isFinite(values[3]) ? values[3] : 1];
+    };
+    const luminance = ([r, g, b]) => {
+      const linear = (channel) => { const value = channel / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    };
+    const background = (element) => {
+      for (let at = element; at; at = at.parentElement) {
+        const parsed = parseColor(getComputedStyle(at).backgroundColor);
+        if (parsed && parsed[3] >= 0.99) return parsed;
+      }
+      return parseColor(getComputedStyle(document.documentElement).backgroundColor) ?? [255, 255, 255, 1];
+    };
+    const failures = [];
+    const ratios = [];
+    for (const selector of requested) {
+      const elements = [...document.querySelectorAll(selector)].filter((element) => element.getClientRects().length);
+      if (!elements.length) { failures.push(`no visible element matched ${selector}`); continue; }
+      for (const element of elements) {
+        const foreground = parseColor(getComputedStyle(element).color);
+        if (!foreground) { failures.push(`no computed text color for ${selector}`); continue; }
+        const bg = background(element);
+        const ratio = (Math.max(luminance(foreground), luminance(bg)) + 0.05) / (Math.min(luminance(foreground), luminance(bg)) + 0.05);
+        ratios.push({ selector, ratio: Number(ratio.toFixed(2)) });
+        if (ratio < 4.5) failures.push(`${selector} is ${ratio.toFixed(2)}:1`);
+      }
+    }
+    const pending = document.querySelector('.tk-comment-row.pending');
+    if (pending && Number.parseFloat(getComputedStyle(pending).opacity) !== 1) failures.push('pending comment row applies opacity to its timestamp');
+    return { failures, ratios };
+  }, selectors);
+  console.log(`${name}: computed contrast ${JSON.stringify(result.ratios)}`);
+  if (result.failures.length) throw new Error(`${name}: ${result.failures.join('; ')}`);
+}
+
 const STATES = {
   async 'tracker-fullscreen'({ page, base }) {
     await page.goto(`${base}/?debug&trackerMock=1#/t/all`);
@@ -1176,6 +1262,9 @@ const STATES = {
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
     await page.locator('.trk-new-preview:not([hidden])').waitFor();
     if (await page.locator('.trk-new-preview script').count()) throw new Error('tracker-new-issue: preview inserted an executable script node');
+    const probeError = await addTrackerContrastProbe(page, 'new-issue');
+    if (probeError) throw new Error(`tracker-new-issue: ${probeError}`);
+    await assertComputedTextContrast(page, 'tracker-new-issue', ['.trk-new-issue .trk-inline-error', '.trk-new-issue .trk-create-reason']);
     return { noPark: true };
   },
   async 'tracker-phone'({ page, base, width }) {
@@ -3163,6 +3252,12 @@ const STATES = {
     await openTrackerMockShell(page, base);
     await page.locator('.trk-title-link').first().click();
     await page.waitForTimeout(1200);
+    const probeError = await addTrackerContrastProbe(page, 'ticket');
+    if (probeError) throw new Error(`review-ticket-page: ${probeError}`);
+    await assertComputedTextContrast(page, 'review-ticket-page', [
+      '.tk-contrast-review .tk-external-link', '.tk-contrast-review .tk-new-comments',
+      '.tk-contrast-review .tk-comment-row.pending .trk-relative-time',
+    ]);
   },
   async 'steps-toast'(env) {
     await STATES['flow-steps-overlap-edit'](env);
