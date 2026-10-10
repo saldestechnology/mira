@@ -105,7 +105,7 @@ describe('tracker slice 4 HTTP routes', () => {
     const created = await api(owner, 'POST', '/api/tracker/links', linkBody());
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({
-      link: { boardId, kanbanId: 'kanban-1', cardCount: 1 },
+      link: { boardId, kanbanId: 'kanban-1', cardCount: 1, pendingProjections: expect.any(Number) },
       created: [{ cardId: 'card-1', ticket: { key: 'TAB-1', title: 'First card', state: { key: 'todo' }, links: [{ kind: 'card', cardId: 'card-1' }] } }],
       skipped: [{ cardId: 'card-2', reason: 'unmapped_lane' }],
       projectionPending: false,

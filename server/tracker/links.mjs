@@ -146,6 +146,9 @@ function linkView(db, row, { cardCount } = {}) {
     workflowId: row.workflow_id,
     mapping: mappingRows(db, row.id),
     cardCount: count,
+    pendingProjections: Number(db.prepare(
+      'SELECT COUNT(*) AS count FROM ticket_projection_outbox WHERE board_id = ? AND kanban_id = ? AND applied_at IS NULL',
+    ).get(row.board_id, row.kanban_id).count),
     createdAt: row.created_at,
     createdBy: row.created_by,
     ...(row.removed_at == null ? {} : { removedAt: row.removed_at }),

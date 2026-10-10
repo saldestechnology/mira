@@ -13,7 +13,7 @@ Status: contract for the server side of slice 4 (one-way SQL-to-card projection)
 
 ## Objects
 
-Link:
+Link (`pendingProjections` counts card updates not yet written to the board; poll `GET /links` until it is 0 when a response said `projectionPending: true`; the feed carries no projection events):
 
 ```json
 {
@@ -23,6 +23,7 @@ Link:
   "workflowId": "...",
   "mapping": [{ "laneId": "...", "stateKey": "todo", "stateId": "..." }],
   "cardCount": 17,
+  "pendingProjections": 0,
   "createdAt": 1760000000000,
   "createdBy": "userId"
 }
