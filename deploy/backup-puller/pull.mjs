@@ -206,11 +206,16 @@ async function atomicWriteFile(file, data, mode = 0o600) {
     await ensureDirectoryTree(parent);
     await safeExistingFile(target);
     await fs.promises.rename(temp, target);
-    const dir = await fs.promises.open(parent, fs.constants.O_RDONLY);
     try {
-      await dir.sync();
-    } finally {
-      await dir.close();
+      const dir = await fs.promises.open(parent, fs.constants.O_RDONLY);
+      try {
+        await dir.sync();
+      } finally {
+        await dir.close();
+      }
+    } catch (error) {
+      // Windows cannot open or sync a directory (test runs only; Linux is the host): elsewhere a failed sync is a failure
+      if (process.platform !== 'win32') throw error;
     }
   } catch {
     await handle?.close().catch(() => {});
@@ -743,7 +748,8 @@ async function readMasterFile(file) {
   } catch {
     throw new PullerError('pull_master_unavailable');
   }
-  if (stat.isSymbolicLink() || !stat.isFile() || (stat.mode & 0o022) !== 0) throw new PullerError('unsafe_pull_master_file');
+  // The puller runs on the Linux host; Windows reports every file as 0666, so the mode check is skipped there (test runs only).
+  if (stat.isSymbolicLink() || !stat.isFile() || (process.platform !== 'win32' && (stat.mode & 0o022) !== 0)) throw new PullerError('unsafe_pull_master_file');
   let master;
   try {
     master = await fs.promises.readFile(file, 'utf8');

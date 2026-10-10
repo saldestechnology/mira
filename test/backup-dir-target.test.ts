@@ -43,7 +43,13 @@ async function adminBackupList(api: ReturnType<typeof createApi>, cookie: string
 
 afterEach(async () => {
   await Promise.all(engines.splice(0).map((engine) => engine.stop()));
-  for (const directory of directories.splice(0)) directory.close();
+  for (const directory of directories.splice(0)) {
+    try {
+      directory.close();
+    } catch {
+      // a restore already closed it
+    }
+  }
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
@@ -172,7 +178,8 @@ describe('the directory backup target', () => {
       now: () => clock.now,
       sleep: async () => {},
       statfs: async () => ({ bsize: 4096, blocks: 1_000_000, bavail: 900_000 }),
-      hooks: { closeDirectory: () => {} },
+      // Windows cannot rename a file over an open one, so the restore closes the directory as the server does
+      hooks: { closeDirectory: () => directory.close() },
       setTimeout: (fn: () => void) => { fn(); return 1; },
       clearTimeout: () => {},
       exit: (code: number) => exits.push(code),
