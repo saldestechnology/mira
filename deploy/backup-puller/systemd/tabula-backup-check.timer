@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly structure check of the pulled Tabula backups
+
+[Timer]
+OnCalendar=Sun *-*-* 05:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
