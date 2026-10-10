@@ -171,9 +171,12 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   // ---------------------------------------------------------------- top right
   const people = h('div', { class: 'people', 'aria-label': 'People on this board' });
+  let fitSixAvatars = false;
   let knownPeople: Map<number, string> | null = null;
   const renderPeople = () => {
     const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
+    const limit = window.innerWidth < 380 ? 1 : window.innerWidth < 480 ? 2 : fitSixAvatars ? 6 : 3;
+    const remaining = Math.max(0, ps.length - limit);
     const canEditProfile = canChangeProfile(authState().mode);
     // who arrived and who left since the last time, said once the first list is known
     const now = new Map(ps.filter((p) => !p.isMe).map((p) => [p.clientId, `${p.user.name}${p.user.guest ? ' · Guest' : ''}`]));
@@ -183,7 +186,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     }
     knownPeople = now;
     const runs = liveRunsFor(app)?.list() ?? [];
-    people.replaceChildren(...ps.slice(0, 6).map((p) => {
+    people.replaceChildren(...ps.slice(0, limit).map((p) => {
       // someone with an AI run or preview on the board: the spark, and what they are doing as their name
       const busy = p.isMe ? null : badgeRun(p.user, runs);
       const name = `${p.user.name}${p.user.guest ? ' · Guest' : ''}`;
@@ -194,9 +197,10 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       const props = { class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': `${tip}, initials ${avatarText}` };
       if (p.isMe && !canEditProfile) return h('span', { ...props, role: 'img' }, ...children);
       return h('button', { ...props, onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)) }, ...children);
-    }), ...(ps.length > 6 ? [h('span', { class: 'avatar more' }, `+${ps.length - 6}`)] : []));
+    }), ...(remaining > 0 ? [h('span', { class: 'avatar more', role: 'img', 'aria-label': `${remaining} more people here`, 'data-tip': `${remaining} more people here` }, `+${remaining}`)] : []));
   };
-  app.on('presence', renderPeople);
+  let refreshPresenceLayout = renderPeople;
+  app.on('presence', () => refreshPresenceLayout());
   renderPeople();
   const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu' }, icon('dots', 18));
   const history = scratch || demo ? null : mountHistory(app, chrome);
@@ -424,6 +428,54 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   chrome.append(topLeft, topRight, rail, penTray, stickyTray, mini.el, zoomTray);
   trackPanelTop(chrome, [topLeft, topRight]);
+  const updatePanelTop = () => {
+    const origin = chrome.getBoundingClientRect().top;
+    const bottoms = [topLeft, topRight].filter((bar) => typeof bar.getClientRects !== 'function' || bar.getClientRects().length > 0).map((bar) => bar.getBoundingClientRect().bottom);
+    const lowest = Math.max(origin, ...bottoms);
+    chrome.style.setProperty('--panel-top', `${Math.max(72, Math.ceil(lowest - origin + 8))}px`);
+  };
+  const positionPhoneTray = () => {
+    if (window.innerWidth > 860) {
+      topRight.style.removeProperty('top');
+      updatePanelTop();
+      return;
+    }
+    const origin = chrome.getBoundingClientRect().top;
+    const leftBottom = topLeft.getBoundingClientRect().bottom - origin;
+    const safeTop = typeof getComputedStyle === 'function'
+      ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-top')) || 0
+      : 0;
+    const minimumTop = (chrome.closest('.demo-board') ? 100 : 64) + safeTop;
+    topRight.style.top = `${Math.ceil(Math.max(minimumTop, leftBottom + 8))}px`;
+    updatePanelTop();
+  };
+  const refreshPeopleLayout = () => {
+    fitSixAvatars = false;
+    if (window.innerWidth >= 480) {
+      // Measure the whole tray with the six-avatar candidate rendered. Keep it only if the actual row fits.
+      fitSixAvatars = true;
+      renderPeople();
+      const tray = topRight.getBoundingClientRect();
+      const safeLeft = typeof getComputedStyle === 'function' ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-left')) || 0 : 0;
+      const safeRight = typeof getComputedStyle === 'function' ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-right')) || 0 : 0;
+      fitSixAvatars = topRight.clientWidth > 0
+        && topRight.scrollWidth <= topRight.clientWidth + 1
+        && tray.left >= 12 + safeLeft - 0.5
+        && tray.right <= window.innerWidth - 12 - safeRight + 0.5;
+    }
+    renderPeople();
+    positionPhoneTray();
+    updatePanelTop();
+  };
+  refreshPresenceLayout = refreshPeopleLayout;
+  const topLeftObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(positionPhoneTray);
+  topLeftObserver?.observe(topLeft);
+  window.addEventListener('resize', refreshPeopleLayout);
+  refreshPeopleLayout();
+  app.onDestroy(() => {
+    topLeftObserver?.disconnect();
+    window.removeEventListener('resize', refreshPeopleLayout);
+  });
   renderStickyTray();
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props, { demo });
