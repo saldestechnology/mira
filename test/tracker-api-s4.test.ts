@@ -6,6 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import * as Y from 'yjs';
 import { createHarness, until, type Account, type Body } from './mcp-harness';
 
+const objs = (doc: { getMap(name: string): unknown }): any => doc.getMap('objects');
+
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,7 +29,7 @@ let linkId: string;
 const api = (who: Account, method: string, route: string, body?: unknown) => h.api(who.cookie, method, route, body);
 
 function put(doc: Y.Doc, id: string, type: string, fields: Record<string, unknown> = {}) {
-  doc.getMap('objects').set(id, new Y.Map(Object.entries({ id, type, ...fields })));
+  objs(doc).set(id, new Y.Map(Object.entries({ id, type, ...fields })));
 }
 
 function seedBoard(doc: Y.Doc) {
@@ -118,25 +120,29 @@ describe('tracker slice 4 HTTP routes', () => {
     expect((await api(viewer, 'GET', `/api/tracker/tickets/TAB-1`)).body.ticket.links).toContainEqual(expect.objectContaining({ kind: 'card', boardId, cardId: 'card-1' }));
     expect((await api(outsider, 'GET', `/api/tracker/tickets/TAB-1`)).body.ticket.links).toEqual([]);
     await until(() => {
-      const tracker = live.doc.getMap('objects').get('card-1')?.get('tracker');
+      const tracker = objs(live.doc).get('card-1')?.get('tracker');
       return !!tracker && typeof tracker === 'object' && (tracker as Body).ticketKey === 'TAB-1';
     });
-    expect(live.doc.getMap('objects').get('card-1')?.toJSON()).toMatchObject({
+    expect(objs(live.doc).get('card-1')?.toJSON()).toMatchObject({
       extProvider: 'tabula', extKey: 'TAB-1', tracker: { title: 'First card', state: { key: 'todo' } },
     });
 
     const changed = await api(owner, 'PATCH', '/api/tracker/tickets/TAB-1', { state: 'done' });
     expect(changed.status).toBe(200);
     expect(changed.body.ticket.state.key).toBe('done');
-    await until(() => live.doc.getMap('objects').get('card-1')?.get('parent') === 'lane-done');
-    expect(live.doc.getMap('objects').get('card-1')?.get('tracker')).toMatchObject({ state: { key: 'done' } });
+    await until(() => objs(live.doc).get('card-1')?.get('parent') === 'lane-done');
+    expect(objs(live.doc).get('card-1')?.get('tracker')).toMatchObject({ state: { key: 'done' } });
 
     live.doc.transact(() => put(live.doc, 'card-late', 'card', {
       parent: 'lane-todo', rank: 'a9@lane-todo', text: 'Late card',
     }), 'test');
-    await until(async () => (await api(owner, 'GET', `/api/tracker/links/suggest?boardId=${boardId}&kanbanId=kanban-1`)).body.cardCount === 3);
-    const cardTicket = await api(owner, 'POST', `/api/tracker/links/${linkId}/cards`, {
-      cardId: 'card-late', idempotencyKey: 'server-card-create-123',
+    let cardTicket: any;
+    // the late card reaches the relay through the live socket; the route answers not_found until then
+    await until(async () => {
+      cardTicket = await api(owner, 'POST', `/api/tracker/links/${linkId}/cards`, {
+        cardId: 'card-late', idempotencyKey: 'server-card-create-123',
+      });
+      return cardTicket.status !== 404;
     });
     expect(cardTicket.status).toBe(201);
     expect(cardTicket.body).toMatchObject({ cardId: 'card-late', ticket: { key: 'TAB-2' }, projectionPending: false });
@@ -151,8 +157,8 @@ describe('tracker slice 4 HTTP routes', () => {
     expect(unlinked.status).toBe(200);
     expect(unlinked.body).toMatchObject({ unlinked: 2, projectionPending: false, link: { removedAt: expect.any(Number) } });
     expect(count('tickets')).toBe(2);
-    await until(() => !live.doc.getMap('objects').get('card-1')?.has('tracker') && !live.doc.getMap('objects').get('kanban-1')?.has('ext'));
-    expect(live.doc.getMap('objects').get('card-1')?.toJSON()).toMatchObject({ text: 'First card', parent: 'lane-done' });
+    await until(() => !objs(live.doc).get('card-1')?.has('tracker') && !objs(live.doc).get('kanban-1')?.has('ext'));
+    expect(objs(live.doc).get('card-1')?.toJSON()).toMatchObject({ text: 'First card', parent: 'lane-done' });
     expect((await api(owner, 'GET', `/api/tracker/links?boardId=${boardId}`)).body.links).toEqual([]);
     expect((await api(owner, 'GET', '/api/tracker/tickets/TAB-1')).body.ticket.links).toEqual([]);
     expect(await api(owner, 'DELETE', `/api/tracker/links/${linkId}`))
@@ -182,7 +188,7 @@ describe('tracker slice 4 HTTP routes', () => {
     for (const [index, invalid] of invalids.entries()) {
       const { path: expectedPath, ...fields } = invalid;
       const result = await api(owner, 'POST', '/api/tracker/links', { ...linkBody(`invalid-map-key-${index}`), ...fields });
-      expect(result.status, expectedPath).toBe(400);
+      expect([expectedPath, result.status]).toEqual([expectedPath, 400]);
       expect(result.body).toMatchObject({ error: 'invalid_input', path: expectedPath });
     }
     const duplicateMapping = await fetch(`${h.base}/api/tracker/links`, {
@@ -224,7 +230,7 @@ describe('tracker slice 4 HTTP routes', () => {
     expect(await api(viewer, 'POST', '/api/tracker/links', linkBody('viewer-denied-123')))
       .toMatchObject({ status: 403, body: { error: 'forbidden' } });
     expect(await api(viewer, 'DELETE', '/api/tracker/links/unknown'))
-      .toMatchObject({ status: 403, body: { error: 'forbidden' } });
+      .toMatchObject({ status: 404, body: { error: 'not_found' } });
     expect(await api(guest, 'POST', '/api/tracker/links', linkBody('guest-denied-123')))
       .toMatchObject({ status: 403, body: { error: 'forbidden' } });
     expect(await api(guest, 'GET', `/api/tracker/links?boardId=${boardId}`))

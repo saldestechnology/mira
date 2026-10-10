@@ -44,7 +44,10 @@ function mapFor(db, linkId) {
   ).all(linkId).map((row) => [row.lane_id, row.state_key]));
 }
 
-/** Enqueue a snapshot for every active card link. Call inside the same directory transaction as its ticket event. */
+/**
+ * Enqueue a snapshot for every active card link. Call inside the same directory transaction as its ticket event.
+ * @param {any} [input]
+ */
 export function enqueueTicketProjection({ db: dbArg, ticketId, eventSeq, now = Date.now() } = {}) {
   const db = getDb({ db: dbArg });
   const projection = ticketProjection(db, ticketId, eventSeq);
@@ -86,7 +89,10 @@ export function enqueueTicketProjection({ db: dbArg, ticketId, eventSeq, now = D
   return links.length;
 }
 
-/** Replace the latest projection event with a durable remove; older pending snapshots cannot re-add the card. */
+/**
+ * Replace the latest projection event with a durable remove; older pending snapshots cannot re-add the card.
+ * @param {any} [input]
+ */
 export function enqueueTicketProjectionRemoval({ db: dbArg, ticketLink, now = Date.now() } = {}) {
   const db = getDb({ db: dbArg });
   const rows = db.prepare(
@@ -114,12 +120,14 @@ export function enqueueTicketProjectionRemoval({ db: dbArg, ticketLink, now = Da
   return eventSeq;
 }
 
+/** @param {any} [input] */
 export function writeTrackerContainerLink({ roomAccess, boardId, kanbanId, trackerId, map, now = Date.now() } = {}) {
   return roomAccess.write(boardId, 'tracker-sync:link', (doc) => applyPlan(doc, planTrackerContainerLink(doc, {
     containerId: kanbanId, trackerId, map, now,
   })));
 }
 
+/** @param {any} [input] */
 export function writeTrackerContainerUnlink({ roomAccess, boardId, kanbanId, now = Date.now() } = {}) {
   return roomAccess.write(boardId, 'tracker-sync:unlink', (doc) => applyPlan(doc, planRemoveTrackerProjection(doc, {
     containerId: kanbanId, cardIds: [], now,
@@ -159,7 +167,10 @@ function deferRetry(directory, row, now, error) {
   });
 }
 
-/** Apply due projection work via pure board planners and the relay's serialized room write path. */
+/**
+ * Apply due projection work via pure board planners and the relay's serialized room write path.
+ * @param {any} [input]
+ */
 export function drainTicketProjection({ directory, roomAccess, boardId = null, ticketId = null, baseUrl = 'http://localhost', now = Date.now(), limit = PROJECTION_BATCH } = {}) {
   const db = getDb({ directory });
   if (!roomAccess || typeof roomAccess.write !== 'function') return { applied: 0, projectionPending: pendingCount(db, { boardId, ticketId }) > 0 };
@@ -219,7 +230,10 @@ export function drainTicketProjection({ directory, roomAccess, boardId = null, t
   return { applied, projectionPending: pendingCount(db, { boardId, ticketId }) > 0 };
 }
 
-/** Reconcile the board's container copy on every room load, then drain due card projections. */
+/**
+ * Reconcile the board's container copy on every room load, then drain due card projections.
+ * @param {any} [input]
+ */
 export function retryTrackerProjectionOnRoomLoad({ directory, roomAccess, boardId, baseUrl = 'http://localhost', now = Date.now() } = {}) {
   const db = getDb({ directory });
   let containerFailed = false;
@@ -248,7 +262,10 @@ export function retryTrackerProjectionOnRoomLoad({ directory, roomAccess, boardI
   return { ...drained, projectionPending: drained.projectionPending || containerFailed };
 }
 
-/** Periodically retry due SQL-to-room projections while the relay is running. */
+/**
+ * Periodically retry due SQL-to-room projections while the relay is running.
+ * @param {any} [input]
+ */
 export function createTrackerProjectionWorker({
   directory, roomAccess, baseUrl = 'http://localhost', now = Date.now, intervalMs = DEFAULT_RETRY_INTERVAL_MS,
   timers = true, log = () => {},

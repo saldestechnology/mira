@@ -1734,7 +1734,9 @@ function addSet(ops, object, key, value) {
   return true;
 }
 
-/** Server-only planner for the linked-container mapping copy; public object planners refuse these fields. */
+/** Server-only planner for the linked-container mapping copy; public object planners refuse these fields. * @param {any} doc
+ * @param {any} [input]
+ */
 export function planTrackerContainerLink(doc, { containerId, trackerId, map, now = Date.now() } = {}) {
   const id = idString(containerId, 'containerId');
   const tracker = idString(trackerId, 'trackerId');
@@ -1754,6 +1756,8 @@ export function planTrackerContainerLink(doc, { containerId, trackerId, map, now
 /**
  * Server-only SQL projection planner. It writes ticket fields, the container's lane map, and (when mapped) the card's
  * lane placement. SQL remains canonical; ordinary board lane moves never call this planner.
+ * @param {any} doc
+ * @param {any} [input]
  */
 export function planTrackerProjection(doc, {
   containerId, cardId, trackerId, map, extUrl, projection, targetLaneId = null, now = Date.now(),
@@ -1809,7 +1813,9 @@ export function planTrackerProjection(doc, {
   };
 }
 
-/** Server-only unlink planner. Clears projection identity while leaving the card's ordinary fields and placement intact. */
+/** Server-only unlink planner. Clears projection identity while leaving the card's ordinary fields and placement intact. * @param {any} doc
+ * @param {any} [input]
+ */
 export function planRemoveTrackerProjection(doc, { containerId, cardIds = [], now = Date.now() } = {}) {
   const id = idString(containerId, 'containerId');
   const ids = listOf(cardIds, 'cardIds', 0, KANBAN_LIMITS.cards);

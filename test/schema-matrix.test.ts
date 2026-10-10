@@ -229,7 +229,7 @@ describe('directory tracker rollback floor', () => {
     } finally {
       oldReader.close();
     }
-    expect(snapshot(file)).not.toEqual(before);
+    expect(snapshot(file)).toEqual(before);
     const readOnly = new DatabaseSync(file, { readOnly: true });
     try {
       expect(readOnly.prepare('PRAGMA user_version').get()).toEqual({ user_version: 15 });

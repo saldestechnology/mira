@@ -1487,10 +1487,10 @@ describe('server-side linked kanban projection plans', () => {
       id: 'template-card', type: 'card', x: 0, y: 0, w: 220, h: 72, rotation: 0, z: 'a0', text: 'Template card',
       extProvider: 'tabula', extKey: 'TAB-1', extUrl: 'https://tabula.example/t/TAB-1', trackerId: 'tracker-1',
       tracker: projection, ext: { provider: 'tabula', tracker: 'tracker-1', map: {} }, trackerUnmappedState: true,
-    }] }, { createdBy: 'user-1', now: 5, at: { x: 0, y: 0 } });
+    }] }, { createdBy: 'user-1', now: 5, at: { x: 0, y: 0 } } as any);
     d.transact(() => applyPlan(d, plan), 'template:test');
     const created = plan.ops[0].id;
-    const fields = d.getMap('objects').get(created)?.toJSON();
+    const fields = (d.getMap('objects') as Y.Map<Y.Map<unknown>>).get(created)?.toJSON();
     expect(fields).toMatchObject({ type: 'card', text: 'Template card' });
     for (const field of ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']) {
       expect(fields).not.toHaveProperty(field);

@@ -8,6 +8,8 @@ import {
 } from '../server/tracker/projection.mjs';
 import { transitionTicket } from '../server/tracker/tickets.mjs';
 
+const objs = (doc: { getMap(name: string): unknown }): any => doc.getMap('objects');
+
 const directories: ReturnType<typeof openDirectory>[] = [];
 const documents: Y.Doc[] = [];
 const owner = { type: 'user', userId: 'owner-u', user: { id: 'owner-u', role: 'member', name: 'Owner' } };
@@ -22,7 +24,7 @@ afterEach(() => {
 });
 
 function put(doc: Y.Doc, id: string, type: string, fields: Record<string, unknown> = {}) {
-  doc.getMap('objects').set(id, new Y.Map(Object.entries({ id, type, ...fields })));
+  objs(doc).set(id, new Y.Map(Object.entries({ id, type, ...fields })));
 }
 
 function fixture(cards = 2) {
@@ -98,7 +100,7 @@ describe('tracker link commands', () => {
     const changed = transitionTicket({ directory: fx.directory, actor: owner, key: 'TAB-1', state: 'done', source: 'test', now: 120 });
     expect(drainTicketProjection({ directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', now: 120 }))
       .toMatchObject({ applied: 1, projectionPending: false });
-    expect(fx.doc.getMap('objects').get('card-1')?.toJSON()).toMatchObject({
+    expect(objs(fx.doc).get('card-1')?.toJSON()).toMatchObject({
       parent: 'lane-done', extProvider: 'tabula', extKey: 'TAB-1',
       tracker: { state: { key: 'done' }, projectionSeq: changed.updatedSeq },
     });
@@ -122,7 +124,7 @@ describe('tracker link commands', () => {
     const large = fixture(501);
     large.doc.transact(() => {
       for (let i = 1; i <= 501; i++) {
-        const card = large.doc.getMap('objects').get(`card-${i}`);
+        const card = objs(large.doc).get(`card-${i}`);
         card?.set('parent', 'lane-todo');
         card?.set('rank', `a${i}@lane-todo`);
       }
@@ -166,9 +168,9 @@ describe('tracker link commands', () => {
       .toMatchObject({ projectionPending: false });
     expect(removed.unlinked).toBe(1);
     expect(fx.directory.db.prepare('SELECT COUNT(*) AS n FROM tickets').get()).toEqual({ n: 1 });
-    expect(fx.doc.getMap('objects').get('kanban-1')?.toJSON()).not.toHaveProperty('ext');
-    expect(fx.doc.getMap('objects').get('card-late')?.toJSON()).not.toHaveProperty('tracker');
-    expect(fx.doc.getMap('objects').get('card-late')?.toJSON()).toMatchObject({ text: 'Late card', parent: 'lane-done' });
+    expect(objs(fx.doc).get('kanban-1')?.toJSON()).not.toHaveProperty('ext');
+    expect(objs(fx.doc).get('card-late')?.toJSON()).not.toHaveProperty('tracker');
+    expect(objs(fx.doc).get('card-late')?.toJSON()).toMatchObject({ text: 'Late card', parent: 'lane-done' });
 
     const relinked = linkKanban({
       directory: fx.directory, actor: owner, boardId: 'board-1', kanbanId: 'kanban-1', mapping,
@@ -202,7 +204,10 @@ describe('tracker link commands', () => {
     });
     expect(worker.tick())
       .toMatchObject({ projectionPending: false });
-    expect(suggestMapping({ directory: fx.directory, actor: owner, boardId: 'board-1', kanbanId: 'kanban-1', roomAccess: fx.roomAccess }))
-      .toMatchObject({ mapping: { 'lane-todo': 'todo', 'lane-done': 'done' }, nextKey: 'TAB-2', cardCount: 1 });
+    expect(() => suggestMapping({ directory: fx.directory, actor: owner, boardId: 'board-1', kanbanId: 'kanban-1', roomAccess: fx.roomAccess }))
+      .toThrow(/already linked/);
+    const fresh = fixture(1);
+    expect(suggestMapping({ directory: fresh.directory, actor: owner, boardId: 'board-1', kanbanId: 'kanban-1', roomAccess: fresh.roomAccess }))
+      .toMatchObject({ mapping: { 'lane-todo': 'todo', 'lane-done': 'done' }, nextKey: 'TAB-1', cardCount: 1 });
   });
 });

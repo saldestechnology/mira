@@ -261,7 +261,10 @@ function cardAlreadyLinked(db, boardId, kanbanId, cardId) {
   ).get(boardId, kanbanId, cardId));
 }
 
-/** Link a board kanban and optionally make a ticket for every eligible existing card, atomically. */
+/**
+ * Link a board kanban and optionally make a ticket for every eligible existing card, atomically.
+ * @param {any} [input]
+ */
 export function linkKanban({
   directory, actor, boardId, kanbanId, mapping, createTickets = false, project, labels, idempotencyKey: rawKey,
   roomAccess, now = Date.now(),
@@ -346,13 +349,19 @@ export function linkKanban({
   });
 }
 
-/** Store the first response after its post-commit room projection attempt, so an idempotent retry replays it exactly. */
+/**
+ * Store the first response after its post-commit room projection attempt, so an idempotent retry replays it exactly.
+ * @param {any} [input]
+ */
 export function storeLinkIdempotencyResult({ directory, linkId, result } = {}) {
   directory.db.prepare('UPDATE kanban_tracker_links SET idempotency_result_json = ? WHERE id = ?')
     .run(JSON.stringify(result), linkId);
 }
 
-/** Soft-delete a link and durably queue cleanup for every projected card. */
+/**
+ * Soft-delete a link and durably queue cleanup for every projected card.
+ * @param {any} [input]
+ */
 export function unlinkKanban({ directory, actor, linkId, now = Date.now() } = {}) {
   const key = id(linkId, 'linkId');
   const db = getDb({ directory });
@@ -375,7 +384,10 @@ export function unlinkKanban({ directory, actor, linkId, now = Date.now() } = {}
   });
 }
 
-/** List active links on a board. */
+/**
+ * List active links on a board.
+ * @param {any} [input]
+ */
 export function listLinks({ directory, actor, boardId, kanbanId } = {}) {
   const { boardId: boardKey } = boardFor(directory, actor, boardId);
   if (kanbanId !== undefined) id(kanbanId, 'kanbanId');
@@ -393,7 +405,10 @@ function nextTicketKey(db) {
   return `${tracker.prefix}-${counter?.next_number ?? 1}`;
 }
 
-/** Suggest lane mappings from exact names/keys first, then the To do/Doing/Done default stage mapping. */
+/**
+ * Suggest lane mappings from exact names/keys first, then the To do/Doing/Done default stage mapping.
+ * @param {any} [input]
+ */
 export function suggestMapping({ directory, actor, boardId, kanbanId, roomAccess } = {}) {
   const { boardId: boardKey } = boardFor(directory, actor, boardId);
   const kanbanKey = id(kanbanId, 'kanbanId');
@@ -464,7 +479,10 @@ function idempotentCardResult({ directory, actor, link, cardId, idempotencyKey: 
   return { ticket: getTicket({ directory, actor, key: row.key }), cardId, replayed: true };
 }
 
-/** Create one ticket for a card added after linking. */
+/**
+ * Create one ticket for a card added after linking.
+ * @param {any} [input]
+ */
 export function createTicketForCard({ directory, actor, linkId, cardId, idempotencyKey: rawKey, roomAccess, now = Date.now() } = {}) {
   const key = idempotencyKey(rawKey);
   const link = activeLink(directory, id(linkId, 'linkId'));
