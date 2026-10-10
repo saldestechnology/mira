@@ -439,22 +439,28 @@ Maintain `ticket_search` in the same `directory.transaction` that changes the ti
 
 Parse filters before building an FTS query. Never pass an untrusted filter string directly as SQL or raw FTS syntax.
 
-V1 grammar:
+Filter grammar:
 
 | Filter | Meaning |
 |---|---|
-| `assignee:me` | Tickets assigned to the current actor. |
-| `assignee:<user>` | Tickets assigned to a visible user ID or unambiguous name. |
-| `state:<name-or-key>` | Tickets in a workflow state. |
-| `label:<name>` | Tickets with the label. |
-| `project:<name-or-id>` | Tickets in the project. |
-| `milestone:<name-or-id>` | Tickets in the milestone. |
-| `due:overdue` | Due before now and not completed/canceled/archived. |
-| `due:today` | Due today in the workspace timezone. |
-| `due:before-YYYY-MM-DD` | Due before a date. |
-| `has:link` | Ticket has at least one active canvas card link. |
-| `is:archived` | Include archived tickets. |
-| `created:after-YYYY-MM-DD` | Created since the date. |
+| `state:<key-or-name>`, `label:<name>` | Match states and labels by key/name, case-insensitively. |
+| `assignee:me`, `assignee:<member name/email>`, `assignee:none` | Match the actor, a member, or no assignee. |
+| `creator:me`, `creator:<member name/email>` | Match tickets created directly by that user; token-created tickets do not count as their owner's. |
+| `creator:agent`, `creator:integration`, `creator:import`, `creator:system` | Match the creator type; imports include source `linear-import` or `created_by_type = 'import'`. |
+| `priority:none|urgent|high|medium|low` | Match priority names stored as 0 through 4. |
+| `category:backlog|unstarted|started|completed|canceled` | Match the state's category. |
+| `project:<name>`, `milestone:<name>`, `project:none`, `milestone:none` | Match case-insensitive names or missing associations; named filters include archived rows, repeated milestone names match across projects, and unknown names are invalid. |
+| `due:overdue`, `due:today`, `due:before-DATE`, `due:after-DATE`, `due:none`, `due:this-week` | Match due dates; today and this week use UTC, with the week Monday through Sunday. `after` includes the date. |
+| `created:after-DATE`, `created:before-DATE`, `updated:after-DATE`, `updated:before-DATE` | Compare timestamps at UTC midnight; `after` includes that date and `before` is exclusive. |
+| `is:blocked`, `is:blocking` | Match an incoming block from an open ticket, or an outgoing block to an open ticket. Open excludes categories `completed` and `canceled`. |
+| `has:relation`, `has:parent`, `has:sub` | Match any relation, a direct parent, or direct children. |
+| `parent:TAB-12`, `blocks:TAB-12`, `blocked-by:TAB-12` | Match direct children, blockers, or blocked tickets for the named key. |
+| `relates:TAB-12`, `duplicates:TAB-12`, `duplicated-by:TAB-12` | Match the symmetric relation or the directed duplicate relation. |
+| `has:link` | Always false until tracker slice 4 adds links. |
+| `is:archived` | Include archived tickets; they are excluded by default. |
+
+**Slice 2 decisions:** Prefix any token with `-` to negate it; comma-separated any-of values are supported for state, label, assignee, creator, priority, category, project and milestone, and `-` makes those lists none-of. Lists have at most 20 values, tokens at most 20 per call, and commas always separate values, so filter names cannot contain commas. Negation includes tickets where the field is unset. Dates must be calendar-valid `YYYY-MM-DD`; timestamp `after` includes UTC midnight on the date and `before` is exclusive. Project/milestone names and relation keys are case-insensitive; unknown names and missing or inaccessible relation keys return `invalid_filter` naming the token. Filter values stay parameterized SQL values, and FTS syntax is unchanged. Saved views validate this exact grammar. `has:link` stays false in this slice.
+
 - Search body limit: 512 Unicode code points; filter count limit: 20; saved query JSON limit: 8 KB.
 - Return at most 50 rows per page; use keyset pagination on rank bucket, `updated_at`, and `tickets.id`, not SQL `OFFSET`.
 - Rank exact key/alias match first, title prefix second, title token match third, description/comment match after that. Use deterministic tie-breaking by `tickets.updated_at DESC, tickets.id`.

@@ -4,6 +4,8 @@ import { actorInfo, getDb, invalid, limitExceeded, OpsError, utcStartOfDay, vali
 const COMMENT_COUNT_LIMIT = 10_000;
 const INDEX_BYTES_LIMIT = 64 * 1024;
 const PAGE_MAX = 50;
+const PRIORITY_VALUES = new Map(['none', 'urgent', 'high', 'medium', 'low'].map((name, value) => [name, value]));
+const LIST_FILTERS = new Set(['state', 'label', 'assignee', 'creator', 'priority', 'category', 'project', 'milestone']);
 
 export function buildFtsQuery(query) {
   const terms = query.match(/[\p{L}\p{M}\p{N}_]+/gu) ?? [];
@@ -81,96 +83,255 @@ function invalidFilter(token, message = `Invalid filter: ${token}`) {
   throw new OpsError('invalid_filter', message, token);
 }
 
-function resolveMember(db, token) {
+function resolveMember(db, value, filterToken, field) {
   const rows = db.prepare(
     `SELECT id FROM users WHERE disabled = 0 AND role IN ('owner', 'admin', 'member')
       AND (name = ? COLLATE NOCASE OR email = ? COLLATE NOCASE) ORDER BY id`,
-  ).all(token, token);
-  if (rows.length > 1) invalidFilter(token, `Ambiguous assignee filter: ${token}`);
+  ).all(value, value);
+  if (rows.length > 1) invalidFilter(filterToken, `Ambiguous ${field} filter: ${filterToken}`);
   return rows[0]?.id ?? null;
 }
 
+function filterValues(field, value, token) {
+  if (!LIST_FILTERS.has(field) && value.includes(',')) invalidFilter(token);
+  const values = LIST_FILTERS.has(field) ? value.split(',').map((item) => item.trim()) : [value];
+  if (values.length > 20 || values.some((item) => !item)) invalidFilter(token);
+  return values;
+}
+
+function addPredicate(clauses, params, expression, values, negated) {
+  clauses.push(negated ? `NOT COALESCE((${expression}), 0)` : `(${expression})`);
+  params.push(...values);
+}
+
+function resolveFilterKey(db, actor, value, token) {
+  const row = db.prepare('SELECT id FROM tickets WHERE key = ? COLLATE NOCASE').get(value);
+  if (!row) invalidFilter(token);
+  try {
+    ticketAccess(actor, row);
+  } catch {
+    invalidFilter(token);
+  }
+  return row.id;
+}
+
+function dateValue(value, prefix, token) {
+  if (!value.toLowerCase().startsWith(prefix)) invalidFilter(token);
+  const date = value.slice(prefix.length);
+  if (!validCalendarDate(date)) invalidFilter(token);
+  return date;
+}
+
+function utcWeek(now) {
+  const start = new Date(now);
+  start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
+  const first = start.toISOString().slice(0, 10);
+  start.setUTCDate(start.getUTCDate() + 6);
+  return [first, start.toISOString().slice(0, 10)];
+}
+
 function addParsedFilter(db, actor, token, now, clauses, params, canSee) {
-  const colon = token.indexOf(':');
+  const negated = token.startsWith('-');
+  const filterToken = negated ? token.slice(1) : token;
+  const colon = filterToken.indexOf(':');
   if (colon < 1) invalidFilter(token);
-  const field = token.slice(0, colon).toLowerCase();
-  const value = token.slice(colon + 1).trim();
+  const field = filterToken.slice(0, colon).toLowerCase();
+  const value = filterToken.slice(colon + 1).trim();
   if (!value && field !== 'is') invalidFilter(token);
+  const values = filterValues(field, value, token);
   switch (field) {
     case 'assignee': {
       if (!canSee) {
-        clauses.push('0 = 1');
+        addPredicate(clauses, params, '0 = 1', [], negated);
         return;
       }
-      if (value.toLowerCase() === 'me') {
-        const userId = actorInfo(actor).userId;
-        if (!userId) clauses.push('0 = 1');
-        else { clauses.push('t.assignee_user_id = ?'); params.push(userId); }
-        return;
+      const userIds = [];
+      let includesNone = false;
+      for (const item of values) {
+        const normalized = item.toLowerCase();
+        if (normalized === 'none') {
+          includesNone = true;
+          continue;
+        }
+        let userId;
+        if (normalized === 'me') userId = actorInfo(actor).userId;
+        else {
+          if (item.length > 200) invalidFilter(token);
+          userId = resolveMember(db, item, token, 'assignee');
+        }
+        if (userId && !userIds.includes(userId)) userIds.push(userId);
       }
-      if (value.length > 200) invalidFilter(token);
-      const userId = resolveMember(db, value);
-      if (!userId) clauses.push('0 = 1');
-      else { clauses.push('t.assignee_user_id = ?'); params.push(userId); }
+      const matches = [];
+      const matchParams = [];
+      if (includesNone) matches.push('t.assignee_user_id IS NULL');
+      if (userIds.length) {
+        matches.push(`t.assignee_user_id IN (${userIds.map(() => '?').join(', ')})`);
+        matchParams.push(...userIds);
+      }
+      addPredicate(clauses, params, matches.length ? matches.join(' OR ') : '0 = 1', matchParams, negated);
       return;
     }
-    case 'state':
-      clauses.push(`EXISTS (
+    case 'state': {
+      const matches = values.map(() => '(fs.state_key = ? COLLATE NOCASE OR fs.name = ? COLLATE NOCASE)').join(' OR ');
+      addPredicate(clauses, params, `EXISTS (
         SELECT 1 FROM ticket_states fs WHERE fs.id = t.state_id AND fs.archived_at IS NULL
-          AND (fs.state_key = ? COLLATE NOCASE OR fs.name = ? COLLATE NOCASE)
-      )`);
-      params.push(value, value);
+          AND (${matches})
+      )`, values.flatMap((item) => [item, item]), negated);
       return;
-    case 'label':
-      clauses.push(`EXISTS (
+    }
+    case 'label': {
+      const matches = values.map(() => 'fLabel.name = ? COLLATE NOCASE').join(' OR ');
+      addPredicate(clauses, params, `EXISTS (
         SELECT 1 FROM ticket_labels fl JOIN labels fLabel ON fLabel.id = fl.label_id
-        WHERE fl.ticket_id = t.id AND fLabel.archived_at IS NULL AND fLabel.name = ? COLLATE NOCASE
-      )`);
-      params.push(value);
+        WHERE fl.ticket_id = t.id AND fLabel.archived_at IS NULL AND (${matches})
+      )`, values, negated);
       return;
+    }
+    case 'creator': {
+      const matches = [];
+      const matchParams = [];
+      for (const item of values) {
+        const normalized = item.toLowerCase();
+        if (normalized === 'agent') matches.push("t.created_by_type = 'mcp_token'");
+        else if (normalized === 'integration') matches.push("t.created_by_type = 'integration'");
+        else if (normalized === 'import') matches.push("(t.source = 'linear-import' OR t.created_by_type = 'import')");
+        else if (normalized === 'system') matches.push("t.created_by_type = 'system'");
+        else {
+          const userId = normalized === 'me' ? actorInfo(actor).userId : resolveMember(db, item, token, 'creator');
+          if (userId) {
+            matches.push("(t.created_by_type = 'user' AND t.created_by_id = ?)");
+            matchParams.push(userId);
+          }
+        }
+      }
+      addPredicate(clauses, params, matches.length ? matches.join(' OR ') : '0 = 1', matchParams, negated);
+      return;
+    }
+    case 'priority': {
+      const priorities = values.map((item) => PRIORITY_VALUES.get(item.toLowerCase()));
+      if (priorities.some((priority) => priority === undefined)) invalidFilter(token);
+      addPredicate(clauses, params, `t.priority IN (${priorities.map(() => '?').join(', ')})`, priorities, negated);
+      return;
+    }
+    case 'category': {
+      const categories = values.map((item) => item.toLowerCase());
+      if (categories.some((category) => !['backlog', 'unstarted', 'started', 'completed', 'canceled'].includes(category))) invalidFilter(token);
+      addPredicate(clauses, params, `fs.category IN (${categories.map(() => '?').join(', ')})`, categories, negated);
+      return;
+    }
+    case 'project':
+    case 'milestone': {
+      const includesNone = values.some((item) => item.toLowerCase() === 'none');
+      const names = values.filter((item) => item.toLowerCase() !== 'none');
+      const matches = [];
+      const matchParams = [];
+      if (includesNone) matches.push(field === 'project' ? 't.project_id IS NULL' : 't.milestone_id IS NULL');
+      for (const name of names) {
+        const table = field === 'project' ? 'projects' : 'milestones';
+        const ticketColumn = field === 'project' ? 'project_id' : 'milestone_id';
+        const found = db.prepare(`SELECT 1 FROM ${table} WHERE name = ? COLLATE NOCASE LIMIT 1`).get(name);
+        if (!found) invalidFilter(token);
+        matches.push(`EXISTS (SELECT 1 FROM ${table} fp WHERE fp.id = t.${ticketColumn} AND fp.name = ? COLLATE NOCASE)`);
+        matchParams.push(name);
+      }
+      addPredicate(clauses, params, matches.length ? matches.join(' OR ') : '0 = 1', matchParams, negated);
+      return;
+    }
     case 'due': {
-      // Slice 1 limitation: workspace time zones are not modeled yet, so due:today uses UTC.
       const today = new Date(now).toISOString().slice(0, 10);
-      if (value === 'overdue') {
-        clauses.push(`t.due_date < ? AND t.archived_at IS NULL AND fs.category NOT IN ('completed', 'canceled')`);
-        params.push(today);
+      const normalized = value.toLowerCase();
+      if (normalized === 'none') {
+        addPredicate(clauses, params, 't.due_date IS NULL', [], negated);
         return;
       }
-      if (value === 'today') {
-        clauses.push('t.due_date = ?');
-        params.push(today);
+      if (normalized === 'overdue') {
+        addPredicate(clauses, params, `t.due_date < ? AND t.archived_at IS NULL AND fs.category NOT IN ('completed', 'canceled')`, [today], negated);
         return;
       }
-      if (value.startsWith('before-')) {
-        const date = value.slice('before-'.length);
-        if (!validCalendarDate(date)) invalidFilter(token);
-        clauses.push('t.due_date < ?');
-        params.push(date);
+      if (normalized === 'today') {
+        addPredicate(clauses, params, 't.due_date = ?', [today], negated);
+        return;
+      }
+      if (normalized === 'this-week') {
+        const [first, last] = utcWeek(now);
+        addPredicate(clauses, params, 't.due_date >= ? AND t.due_date <= ?', [first, last], negated);
+        return;
+      }
+      if (normalized.startsWith('before-')) {
+        const date = dateValue(value, 'before-', token);
+        addPredicate(clauses, params, 't.due_date < ?', [date], negated);
+        return;
+      }
+      if (normalized.startsWith('after-')) {
+        const date = dateValue(value, 'after-', token);
+        addPredicate(clauses, params, 't.due_date >= ?', [date], negated);
         return;
       }
       invalidFilter(token);
       break;
     }
-    case 'has':
-      if (value !== 'link') invalidFilter(token);
-      clauses.push('0 = 1');
-      return;
-    case 'is':
-      if (value !== 'archived') invalidFilter(token);
-      clauses.push('t.archived_at IS NOT NULL');
-      return;
+    case 'updated':
     case 'created': {
-      if (!value.startsWith('after-')) invalidFilter(token);
-      const date = value.slice('after-'.length);
-      if (!validCalendarDate(date)) invalidFilter(token);
-      clauses.push('t.created_at >= ?');
-      params.push(utcStartOfDay(date));
+      const normalized = value.toLowerCase();
+      let date;
+      if (normalized.startsWith('after-')) date = dateValue(value, 'after-', token);
+      else if (field === 'updated' && normalized.startsWith('before-')) date = dateValue(value, 'before-', token);
+      else if (field === 'created' && normalized.startsWith('before-')) date = dateValue(value, 'before-', token);
+      else invalidFilter(token);
+      const lowerBound = normalized.startsWith('after-');
+      const column = field === 'updated' ? 't.updated_at' : 't.created_at';
+      addPredicate(clauses, params, `${column} ${lowerBound ? '>=' : '<'} ?`, [utcStartOfDay(date)], negated);
       return;
     }
-    case 'project':
-    case 'milestone':
-      invalidFilter(token, `${field} filters are not available yet`);
+    case 'has': {
+      const normalized = value.toLowerCase();
+      let expression;
+      if (normalized === 'link') expression = '0 = 1';
+      else if (normalized === 'relation') expression = 'EXISTS (SELECT 1 FROM ticket_relations hr WHERE hr.ticket_id = t.id OR hr.related_ticket_id = t.id)';
+      else if (normalized === 'parent') expression = 't.parent_ticket_id IS NOT NULL';
+      else if (normalized === 'sub') expression = 'EXISTS (SELECT 1 FROM tickets child WHERE child.parent_ticket_id = t.id)';
+      else invalidFilter(token);
+      addPredicate(clauses, params, expression, [], negated);
       return;
+    }
+    case 'is': {
+      const normalized = value.toLowerCase();
+      let expression;
+      if (normalized === 'archived') expression = 't.archived_at IS NOT NULL';
+      else if (normalized === 'blocked') expression = `EXISTS (
+        SELECT 1 FROM ticket_relations br JOIN tickets blocker ON blocker.id = br.ticket_id
+        JOIN ticket_states blocker_state ON blocker_state.id = blocker.state_id
+        WHERE br.related_ticket_id = t.id AND br.kind = 'blocks'
+          AND blocker_state.category NOT IN ('completed', 'canceled')
+      )`;
+      else if (normalized === 'blocking') expression = `EXISTS (
+        SELECT 1 FROM ticket_relations br JOIN tickets blocked ON blocked.id = br.related_ticket_id
+        JOIN ticket_states blocked_state ON blocked_state.id = blocked.state_id
+        WHERE br.ticket_id = t.id AND br.kind = 'blocks'
+          AND blocked_state.category NOT IN ('completed', 'canceled')
+      )`;
+      else invalidFilter(token);
+      addPredicate(clauses, params, expression, [], negated);
+      return;
+    }
+    case 'parent':
+    case 'blocks':
+    case 'blocked-by':
+    case 'relates':
+    case 'duplicates':
+    case 'duplicated-by': {
+      const relatedId = resolveFilterKey(db, actor, value, token);
+      let expression;
+      if (field === 'parent') expression = 't.parent_ticket_id = ?';
+      else if (field === 'blocks') expression = "EXISTS (SELECT 1 FROM ticket_relations rr WHERE rr.ticket_id = t.id AND rr.related_ticket_id = ? AND rr.kind = 'blocks')";
+      else if (field === 'blocked-by') expression = "EXISTS (SELECT 1 FROM ticket_relations rr WHERE rr.ticket_id = ? AND rr.related_ticket_id = t.id AND rr.kind = 'blocks')";
+      else if (field === 'relates') expression = "EXISTS (SELECT 1 FROM ticket_relations rr WHERE ((rr.ticket_id = t.id AND rr.related_ticket_id = ?) OR (rr.related_ticket_id = t.id AND rr.ticket_id = ?)) AND rr.kind = 'relates_to')";
+      else if (field === 'duplicates') expression = "EXISTS (SELECT 1 FROM ticket_relations rr WHERE rr.ticket_id = t.id AND rr.related_ticket_id = ? AND rr.kind = 'duplicates')";
+      else expression = "EXISTS (SELECT 1 FROM ticket_relations rr WHERE rr.ticket_id = ? AND rr.related_ticket_id = t.id AND rr.kind = 'duplicates')";
+      const keyParams = field === 'relates' ? [relatedId, relatedId] : [relatedId];
+      addPredicate(clauses, params, expression, keyParams, negated);
+      return;
+    }
     default:
       invalidFilter(token);
   }

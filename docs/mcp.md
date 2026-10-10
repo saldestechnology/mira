@@ -388,6 +388,35 @@ Ticket `project` is an active project name matched without case; `milestone` is 
 
 `relate_tickets` accepts `blocks`, `blocked_by`, `relates_to`, `duplicates` or `duplicated_by`. Inverse directions share one stored relation; `relates_to` is symmetric. Repeating an add or removing an absent relation has no effect. A blocks cycle, self-relation, or relation beyond 100 rows on either ticket is rejected. Both tickets receive a `related` or `unrelated` event. Archived tickets may be related, but the caller must be able to read and write both tickets; a missing or inaccessible target returns `not_found`.
 
+### Ticket filter grammar
+
+`list_tickets`, `search_tickets` and saved views use the same filter tokens. Filter values are matched as data through parameterized SQL; they do not enter FTS syntax.
+
+| Token | Meaning |
+| --- | --- |
+| `state:<key-or-name>` | Match a workflow state by key or name, case-insensitively. |
+| `label:<name>` | Match a ticket label, case-insensitively. |
+| `assignee:me`, `assignee:<member name/email>`, `assignee:none` | Match the current member, a member, or an unassigned ticket. |
+| `creator:me`, `creator:<member name/email>` | Match tickets created directly by that user. Token-created tickets do not count as created by their owner. |
+| `creator:agent`, `creator:integration`, `creator:import`, `creator:system` | Match `mcp_token`, `integration`, import, or system creators. `import` includes source `linear-import` and `created_by_type = 'import'`. |
+| `priority:none`, `priority:urgent`, `priority:high`, `priority:medium`, `priority:low` | Match the named priority (`none` is stored as 0). |
+| `category:backlog`, `category:unstarted`, `category:started`, `category:completed`, `category:canceled` | Match the ticket state's category. |
+| `project:<name>`, `milestone:<name>` | Match project or milestone names case-insensitively, including archived records. A repeated milestone name matches tickets in any matching project. Unknown names are `invalid_filter`. |
+| `project:none`, `milestone:none` | Match a ticket without that association. |
+| `due:overdue`, `due:today`, `due:before-YYYY-MM-DD`, `due:after-YYYY-MM-DD` | Match dates before UTC today (excluding completed, canceled and archived tickets), today, before a date, or on/after a date. |
+| `due:none`, `due:this-week` | Match no due date, or Monday through Sunday of the current UTC week. |
+| `created:after-YYYY-MM-DD`, `created:before-YYYY-MM-DD` | Match creation timestamps from UTC midnight on the date onward, or before UTC midnight on the date. |
+| `updated:after-YYYY-MM-DD`, `updated:before-YYYY-MM-DD` | Match update timestamps from UTC midnight on the date onward, or before UTC midnight on the date. |
+| `is:blocked`, `is:blocking` | A ticket is blocked by an open ticket, or blocks at least one open ticket. Open means the state category is not `completed` or `canceled`. |
+| `is:archived` | Include archived tickets. Archived tickets are otherwise excluded. |
+| `has:relation`, `has:parent`, `has:sub` | Match any relation, a direct parent, or one or more direct children. |
+| `parent:TAB-12` | Match direct children of the named ticket. |
+| `blocks:TAB-12`, `blocked-by:TAB-12` | Match a ticket that blocks the named ticket, or is blocked by it. |
+| `relates:TAB-12`, `duplicates:TAB-12`, `duplicated-by:TAB-12` | Match the symmetric relation or the named duplicate direction. |
+| `has:link` | Always false until tracker slice 4 adds ticket links. |
+
+Prefix any token with `-` to negate it: `-state:done` excludes that state, and `-state:done,canceled` excludes both values. A negated predicate includes tickets where the field is unset. Comma-separated any-of lists are supported for state, label, assignee, creator, priority, category, project and milestone; a leading `-` makes a list none-of. A list has at most 20 values and a call has at most 20 tokens. Commas always separate list values, so filter names cannot contain commas. Every date must be a calendar-valid `YYYY-MM-DD`. Relation keys are case-insensitive; a missing or inaccessible key is `invalid_filter` with the failing token as its path. `due:today`, `due:overdue`, and `due:this-week` use UTC because workspace time zones are not modeled.
+
 Saved views store up to 20 validated `filter` tokens and use the list-ticket page cursor and limit. The current sort is `updated_desc`. A member can own up to 100 views. Shared views are visible to tracker members; running one uses the runner's ticket access. Only the owner can rename, change filters, share, unshare or delete a view. Projects, milestones and views use opaque ids; tickets continue to use keys in these tools.
 
 Every successful result containing ticket text uses the shared nonce-fenced result helper and includes `cleaned` and `truncated` flags. Text is stripped of invisible characters and clipped at the command limits. This covers titles, descriptions, comments, state names, labels, member names and activity fields. Tool failures return `isError: true` with `{error, message, path?}`. Ticket errors include `invalid_input` (with the argument path), `invalid_filter`, `not_found`, `forbidden`, `conflict`, `read_only` and `limit_exceeded`.
