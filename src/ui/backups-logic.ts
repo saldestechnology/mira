@@ -225,6 +225,7 @@ export function statusRows(status: BackupEngineStatus, now: number): StatusRow[]
     value: status.running ? 'Running now' : status.nextRunAt !== null ? when(status.nextRunAt, now) : 'Not scheduled',
   });
   rows.push({ label: 'How often', value: intervalLabel(status.intervalMinutes) });
+  rows.push({ label: 'Target', value: status.target === 'dir' ? 'Directory' : 'S3 bucket' });
   rows.push({ label: 'Key', value: shortKey(status.keyId) });
   const copies = status.manifests ?? 0;
   rows.push({ label: 'Stored', value: `${formatSize(status.bytesStored)} · ${unit(copies, 'backup')} · ${unit(status.objects ?? 0, 'file')}` });

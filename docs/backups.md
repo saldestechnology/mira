@@ -1,8 +1,8 @@
 # Backups
 
-Tabula can copy its data directory to an S3-compatible bucket on a schedule, **encrypted on the instance before anything leaves it**. The storage provider only ever sees ciphertext and names that tell it nothing. It is generic: any provider that speaks the S3 API will do (Tigris, Cloudflare R2, Backblaze B2, MinIO, AWS S3), and it is off unless you configure it.
+Tabula can back up its data directory on a schedule, **encrypted on the instance before anything leaves it**. The default target is an S3-compatible bucket (Tigris, Cloudflare R2, Backblaze B2, MinIO, AWS S3). A directory target keeps the same sealed objects and manifests on the instance volume for another process to pull. Backups are off unless you configure a target and its key.
 
-> **Losing the key means losing the backups.** Everything in the bucket is encrypted with `TABULA_BACKUP_KEY`. Without that key (and, after a key change, the older keys that sealed older backups) the backups **cannot be read by anyone, including us**. There is no recovery and no reset. Keep a copy of the key somewhere that is not the server it protects, such as a password manager. On the hosted service, the operator holds the master copy of each workspace's key.
+> **Losing the key means losing the backups.** Every backup is encrypted with `TABULA_BACKUP_KEY`. Without that key (and, after a key change, the older keys that sealed older backups) the backups **cannot be read by anyone, including us**. There is no recovery and no reset. Keep a copy of the key somewhere that is not the server it protects, such as a password manager. On the hosted service, the operator holds the master copy of each workspace's key.
 
 Restore is built, as owner-only API routes and as functions of the server (see [Restoring](#restoring)), and the owner uses it from the **Backups tab of the admin dashboard** (see [In the app](#in-the-app)). It has been tested against a faithful in-memory S3 and with crashes injected at every step of the swap, but **not against a real provider and not on a real Fly machine**, and a backup that has never been restored is not a backup. Do a restore drill before you rely on it.
 
@@ -29,19 +29,21 @@ In the database copy the engine leaves out its own traces (the `backup.status` s
 
 ## Turning it on
 
-Backups are on when the five required variables are set. Some but not all of them is a startup error naming the missing ones; a malformed value is a startup error that names the variable and never prints the value.
+The default `s3` target is on when its five required variables are set. The `dir` target needs only `TABULA_BACKUP_KEY`. Missing destination variables or malformed values are startup errors that name the variable and never print its value.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `TABULA_BACKUP_S3_ENDPOINT` | required | The S3 endpoint, for example `https://fly.storage.tigris.dev` or `https://<account>.r2.cloudflarestorage.com`. `https://`, or `http://` for `localhost`, `127.0.0.1` and `[::1]` only. A bare address: no credentials, path, query or fragment |
-| `TABULA_BACKUP_BUCKET` | required | The bucket (3 to 63 lower case letters, digits, dots, hyphens) |
-| `TABULA_BACKUP_ACCESS_KEY` | required | Access key id |
-| `TABULA_BACKUP_SECRET_KEY` | required | Secret access key |
+| `TABULA_BACKUP_TARGET` | `s3` | `s3` writes to the configured bucket; `dir` writes a local export directory |
+| `TABULA_BACKUP_DIR` | `<DATA_DIR>/backup-export` | For target `dir`, an optional absolute path for the local export. It is created when needed |
+| `TABULA_BACKUP_S3_ENDPOINT` | required for `s3` | The S3 endpoint, for example `https://fly.storage.tigris.dev` or `https://<account>.r2.cloudflarestorage.com`. `https://`, or `http://` for `localhost`, `127.0.0.1` and `[::1]` only. A bare address: no credentials, path, query or fragment |
+| `TABULA_BACKUP_BUCKET` | required for `s3` | The bucket (3 to 63 lower case letters, digits, dots, hyphens) |
+| `TABULA_BACKUP_ACCESS_KEY` | required for `s3` | Access key id |
+| `TABULA_BACKUP_SECRET_KEY` | required for `s3` | Secret access key |
 | `TABULA_BACKUP_KEY` | required | The encryption key: 32 random bytes as 64 hex characters or as base64. Make one with `openssl rand -hex 32` |
 | `TABULA_BACKUP_KEY_PREVIOUS` | none | Older keys, comma separated, for **reading** backups sealed before a key change. Writing always uses `TABULA_BACKUP_KEY` |
-| `TABULA_BACKUP_PREFIX` | `tabula` | Everything is stored under this prefix, so several workspaces can share a bucket. Letters, digits, `. - _` and `/` between them |
-| `TABULA_BACKUP_REGION` | `auto` | The signing region. `auto` is right for Tigris and R2; AWS needs the bucket's region |
-| `TABULA_BACKUP_PATH_STYLE` | `on` | `on`: `https://endpoint/bucket/key`. `off`: `https://bucket.endpoint/key` (needs a DNS name, not an IP address) |
+| `TABULA_BACKUP_PREFIX` | `tabula` | Everything is stored under this key prefix. Letters, digits, `. - _` and `/` between them |
+| `TABULA_BACKUP_REGION` | `auto` | For target `s3`, the signing region. `auto` is right for Tigris and R2; AWS needs the bucket's region |
+| `TABULA_BACKUP_PATH_STYLE` | `on` | For target `s3`, `on`: `https://endpoint/bucket/key`. `off`: `https://bucket.endpoint/key` (needs a DNS name, not an IP address) |
 | `TABULA_BACKUP_INTERVAL_MINUTES` | `60` | Time between runs, 5 to 10080 |
 | `TABULA_BACKUP_SETTLE_SECONDS` | `120` | Quiet time after the last change before a backup is taken, 1 to 3600. `0`: no settle backups (see [When it runs](#when-it-runs)) |
 | `TABULA_BACKUP_SHUTDOWN_SECONDS` | `4` | How long a graceful shutdown may spend on a final backup, 1 to 25. `0`: no final backup. Keep it under the time the platform waits before it kills the process (5 seconds on Fly) |
@@ -53,7 +55,13 @@ Backups are on when the five required variables are set. Some but not all of the
 
 The old `MIRA_BACKUP_*` spelling works with the usual deprecation warning. Two examples of retention: an hourly backup with 48 hours of hourly points and 30 days of daily points is the default; a once-a-day backup that keeps a week is `TABULA_BACKUP_INTERVAL_MINUTES=1440 TABULA_BACKUP_KEEP_HOURLY_HOURS=0 TABULA_BACKUP_KEEP_DAILY_DAYS=7`. The newest backup is always kept, whatever these say.
 
-Give the credentials the least they need on that bucket (or prefix): put, get, head, delete and list. The key and the secret key are never written to the log, the status, the audit log or an error message.
+For target `s3`, give the credentials the least they need on that bucket (or prefix): put, get, head, delete and list. The key and the secret key are never written to the log, the status, the audit log or an error message.
+
+## Writing to a directory (target dir)
+
+Use `TABULA_BACKUP_TARGET=dir` when another process will pull the backup from the instance volume. It needs only `TABULA_BACKUP_KEY`; S3 settings are ignored. Set `TABULA_BACKUP_DIR` to an absolute path when the export should live somewhere else. By default the files go to `<DATA_DIR>/backup-export`.
+
+The directory holds the same encrypted, sealed objects and manifests that the S3 target writes. The machine holding this copy does not need the key, and nothing leaves the volume by itself: a separate puller must fetch or copy the files. The export directory lives on the instance volume and is excluded from every backup walk, so a backup never includes its own output. A whole-workspace restore also leaves the export directory in place.
 
 ## When it runs
 
@@ -215,7 +223,7 @@ All need a signed-in **owner** (401 signed out, 403 for anyone else, admins incl
 ```
 GET  /api/admin/backups
   -> { backups: [{name, createdAt, files, bytes, keyId, protected, protectedUntil, readable, error?}],
-       truncated, status: {lastSuccessAt, lastFailureAt, lastFailureError, consecutiveFailures, nextRunAt,
+       truncated, status: {target, lastSuccessAt, lastFailureAt, lastFailureError, consecutiveFailures, nextRunAt,
        running, intervalMinutes, keyId, bytesStored, objects, manifests, dirty, lastTrigger,
        verifiedAt, missingObjects, wrongSizeObjects, unrepairableObjects, deepVerifiedAt, deepDamaged, deepCovered},
        restore: {inProgress, maintenance, last, protectedBackups, oldData} }
@@ -241,7 +249,7 @@ The list is newest first, at most 200 backups, each read (and so verified) once;
 The owner finds all of this under **Admin, Backups** (`#/admin/backups`). Only owners see the tab, and every owner sees it, also when backups are off; admins do not see it, and the address as an admin shows the Overview instead. The list is the one of [Routes](#routes); the tab draws on `GET /api/admin/backups` for the list and the status and on the other routes for the rest.
 
 - **Not set up.** When the routes answer `backups_off` the tab says so and nothing else: on a hosted workspace with an **Add backups** button that opens the workspace's billing (the same owner flow as **Manage billing** in the Overview, never a page of ours), on a self-hosted server with a link to the part of the user guide that names the `TABULA_BACKUP_*` settings.
-- **Status and list.** The status block shows the last backup and how it went (with the engine's short reason when it failed), failures in a row, the next run, how often, the key id (8 characters) and the stored size; one sentence in words says how the last restore ended (done, or failed and why) and when. A notice shows while a restore runs. The list is newest first with the time in UTC and relative, the files, the size, the key and a note: `Protected until <date>` (the seven days the safety backup and the restored backup are protected from pruning) or `Unreadable: <reason>`. An unreadable backup is grey and cannot be opened. Past 200 backups the tab says the older ones are not listed.
+- **Status and list.** The status block shows the target (`S3 bucket` or `Directory`), the last backup and how it went (with the engine's short reason when it failed), failures in a row, the next run, how often, the key id (8 characters) and the stored size; one sentence in words says how the last restore ended (done, or failed and why) and when. A notice shows while a restore runs. The list is newest first with the time in UTC and relative, the files, the size, the key and a note: `Protected until <date>` (the seven days the safety backup and the restored backup are protected from pruning) or `Unreadable: <reason>`. An unreadable backup is grey and cannot be opened. Past 200 backups the tab says the older ones are not listed.
 - **One backup.** **Details** opens the preview in place (not a dialog): when it was made, the app version, files, boards, size, key, whether there is room for a whole restore, and how long the old data would be kept after one, in the words of the server (`keepOldFor` and `reason`). Two actions: **Restore a board as a copy** and **Restore the whole workspace**.
 - **A board as a copy.** The boards of the backup are listed with a search box (it filters in the browser by title and team); pick one and press **Make a copy**. The answer is a line with a link to the new board and, when the copy went to the personal space, the server's message. Nothing else changes, and the button can be pressed again for another copy. While a hosted workspace is read-only the button is off, with the reason; a `402` from the server does the same.
 - **The whole workspace.** Its own screen lists what will happen: everybody is signed out and signs in again (and access tokens and invite links are revoked); the workspace is away for about a minute; a safety backup is made first and a failure stops everything; the current data is moved aside, not deleted, and kept for `keepOldFor` with the server's `reason`; edits made after the backup exist only in that old-data folder. **Restore this backup** stays off until the field holds `RESTORE` exactly (capital letters, no spaces) and while the preview says there is not enough room (the screen says how much is missing). The button is a plain button, not the highlighted one: it is not the safe choice.
@@ -330,7 +338,7 @@ In a hosted workspace (see [cloud.md](cloud.md)) the control plane reads the sta
 ```
 GET /api/internal/backup-status
   -> { enabled: false }                                    backups are off
-  -> { enabled: true, running, keyId, intervalMinutes, settleSeconds, dirty, lastTrigger,
+  -> { enabled: true, target, running, keyId, intervalMinutes, settleSeconds, dirty, lastTrigger,
        lastRunAt, lastSuccessAt, lastError,
        lastFailureAt, lastFailureError, consecutiveFailures,
        lastManifest, bytesStored, objects, manifests, nextRunAt, prune,

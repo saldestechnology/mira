@@ -297,7 +297,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   }
 
   // What the Backups tab shows of the engine's status: the sanitised fields the control plane already reads, and nothing else.
-  const OWNER_STATUS_FIELDS = ['lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests', 'dirty', 'lastTrigger', 'verifiedAt', 'missingObjects', 'wrongSizeObjects', 'unrepairableObjects', 'deepVerifiedAt', 'deepDamaged', 'deepCovered'];
+  const OWNER_STATUS_FIELDS = ['target', 'lastSuccessAt', 'lastFailureAt', 'lastFailureError', 'consecutiveFailures', 'nextRunAt', 'running', 'intervalMinutes', 'keyId', 'bytesStored', 'objects', 'manifests', 'dirty', 'lastTrigger', 'verifiedAt', 'missingObjects', 'wrongSizeObjects', 'unrepairableObjects', 'deepVerifiedAt', 'deepDamaged', 'deepCovered'];
 
   function ownerBackupStatus() {
     const status = backupStatus() ?? {};

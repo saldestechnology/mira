@@ -179,7 +179,7 @@ describe('the list', () => {
 describe('the status block', () => {
   const status = (patch: Partial<BackupEngineStatus> = {}): BackupEngineStatus => ({
     lastSuccessAt: NOW - 30 * MIN, lastFailureAt: null, lastFailureError: null, consecutiveFailures: 0, nextRunAt: NOW + 30 * MIN, running: false,
-    intervalMinutes: 60, keyId: 'a1b2c3d4', bytesStored: 18_874_368, objects: 52, manifests: 7, ...patch,
+    target: 's3', intervalMinutes: 60, keyId: 'a1b2c3d4', bytesStored: 18_874_368, objects: 52, manifests: 7, ...patch,
   });
   const byLabel = (rows: ReturnType<typeof statusRows>) => Object.fromEntries(rows.map((r) => [r.label, r]));
 
@@ -190,6 +190,7 @@ describe('the status block', () => {
     expect(rows['Failures in a row'].value).toBe('0');
     expect(rows['Next backup'].value).toBe('2026-01-15 10:30 UTC · in 30 minutes');
     expect(rows['How often'].value).toBe('Every hour');
+    expect(rows.Target.value).toBe('S3 bucket');
     expect(rows.Key.value).toBe('a1b2c3d4');
     expect(rows.Stored.value).toBe('18 MB · 7 backups · 52 files');
   });
@@ -222,10 +223,15 @@ describe('the status block', () => {
     expect(byLabel(statusRows(status({ nextRunAt: null }), NOW))['Next backup'].value).toBe('Not scheduled');
   });
 
+  it('shows the directory target without referring to a bucket', () => {
+    const rows = byLabel(statusRows(status({ target: 'dir' }), NOW));
+    expect(rows.Target.value).toBe('Directory');
+  });
+
   it('copes with a status that holds nothing yet', () => {
     const empty: BackupEngineStatus = {
       lastSuccessAt: null, lastFailureAt: null, lastFailureError: null, consecutiveFailures: null, nextRunAt: null, running: null, intervalMinutes: null, keyId: null,
-      bytesStored: null, objects: null, manifests: null,
+      target: null, bytesStored: null, objects: null, manifests: null,
     };
     const rows = byLabel(statusRows(empty, NOW));
     expect(rows['Failures in a row'].value).toBe('0');
