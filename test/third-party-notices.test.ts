@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { collectCargoRuntimePackages, collectHostedIconSets, collectNpmRuntimePackages, packageLicenseFiles, renderNotices } from '../scripts/third-party-notices.mjs';
+import { collectCargoRuntimePackages, collectHostedIconSets, collectNpmRuntimePackages, packageLicenseFiles, packageLicenseFilesFor, renderNotices } from '../scripts/third-party-notices.mjs';
 
 const tempDirectories: string[] = [];
 
@@ -11,14 +11,14 @@ afterEach(() => {
 });
 
 describe('third-party notices inventory', () => {
-  it('follows runtime npm edges and excludes dev-only and optional-peer-only packages', () => {
+  it('follows runtime npm edges and includes optional peers present in the lockfile', () => {
     const lock = {
       packages: {
         '': { dependencies: { app: '1.0.0' }, devDependencies: { tooling: '1.0.0' } },
         'node_modules/app': {
           name: 'app', version: '1.0.0', license: 'MIT',
-          dependencies: { nested: '1.0.0' }, peerDependencies: { optional: '*', required: '*' },
-          peerDependenciesMeta: { optional: { optional: true } },
+          dependencies: { nested: '1.0.0' }, peerDependencies: { optional: '*', required: '*', unresolved: '*' },
+          peerDependenciesMeta: { optional: { optional: true }, unresolved: { optional: true } },
         },
         'node_modules/app/node_modules/nested': { name: 'nested', version: '1.0.0', license: 'ISC' },
         'node_modules/optional': { name: 'optional', version: '1.0.0', license: 'MIT' },
@@ -28,7 +28,7 @@ describe('third-party notices inventory', () => {
     } as const;
 
     const packages = collectNpmRuntimePackages(lock as never);
-    expect(packages.map((pkg) => pkg.name)).toEqual(['app', 'nested', 'required']);
+    expect(packages.map((pkg) => pkg.name)).toEqual(['app', 'nested', 'optional', 'required']);
     expect(packages.find((pkg) => pkg.name === 'nested')?.installPath).toBe('node_modules/app/node_modules/nested');
   });
 
@@ -150,6 +150,17 @@ describe('third-party notices inventory', () => {
     expect(packageLicenseFiles(directory)).toEqual([{ name: 'LICENSE-MIT', text: 'Copyright 2026 Example\n\nMIT text\n' }]);
   });
 
+  it('includes the pinned standardwebhooks upstream MIT license when its npm archive omits it', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-notices-'));
+    tempDirectories.push(directory);
+
+    const files = packageLicenseFilesFor({ name: 'standardwebhooks', version: '1.1.1' }, directory);
+    expect(files).toHaveLength(1);
+    expect(files[0].name).toContain('libraries/LICENSE at b4d2c14fc5b4ccff3ff271e3b087dff812254c59');
+    expect(files[0].text).toContain('Copyright (c) 2023 Svix');
+    expect(packageLicenseFilesFor({ name: 'standardwebhooks', version: '1.1.0' }, directory)).toEqual([]);
+  });
+
   it('renders font review, CC BY credits, MPL, Unicode, and the release-copy follow-up', () => {
     const markdown = renderNotices({
       npmRows: [],
@@ -165,6 +176,9 @@ describe('third-party notices inventory', () => {
     expect(markdown).toContain('CC-BY-4.0');
     expect(markdown).toContain('MPL-2.0');
     expect(markdown).toContain('Unicode-3.0');
+    expect(markdown).toContain('The following MPL-2.0 crates are unmodified');
+    expect(markdown).toContain('selectors@0.38.0');
+    expect(markdown).toContain('crates.io at the listed versions');
     expect(markdown).toContain('separate release integration task');
   });
 });

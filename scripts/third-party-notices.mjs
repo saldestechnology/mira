@@ -12,6 +12,33 @@ const root = path.resolve(here, '..');
 const outputPath = path.join(root, 'docs', 'third-party-notices.md');
 const licenseFileName = /^(?:licen[cs]e|copying|notice|copyright|unlicense|patents)(?:$|[._ -].*)/i;
 const licenseMetadataExtensions = new Set(['.json', '.spdx', '.toml', '.yaml', '.yml']);
+const upstreamLicenseFiles = new Map([
+  ['standardwebhooks@1.1.1', {
+    name: 'LICENSE (upstream libraries/LICENSE at b4d2c14fc5b4ccff3ff271e3b087dff812254c59)',
+    text: `The MIT License
+
+Copyright (c) 2023 Svix (https://www.svix.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+`,
+  }],
+]);
 const npmName = (entry) => {
   if (entry.name) return entry.name;
   const installPath = entry.installPath.startsWith('node_modules/') ? entry.installPath.slice('node_modules/'.length) : entry.installPath;
@@ -38,14 +65,12 @@ function packageEdges(entry) {
   const edges = new Set([
     ...Object.keys(entry.dependencies || {}),
     ...Object.keys(entry.optionalDependencies || {}),
+    ...Object.keys(entry.peerDependencies || {}),
   ]);
-  for (const name of Object.keys(entry.peerDependencies || {})) {
-    if (!entry.peerDependenciesMeta?.[name]?.optional) edges.add(name);
-  }
   return [...edges].sort();
 }
 
-/** The production closure of a v3 npm lockfile; dev-only and optional-peer-only packages are excluded. */
+/** The production closure of a v3 npm lockfile; dev-only packages and unresolved peers are excluded. */
 export function collectNpmRuntimePackages(lock) {
   const packages = lock?.packages;
   if (!packages || !packages['']) throw new Error('Expected an npm package-lock v3 file with packages[""]');
@@ -131,7 +156,7 @@ function licenseTextNames(directory) {
   }
 }
 
-/** Returns package license files, including an explicit Cargo license_file when one is declared. */
+/** Returns package license files, including an explicit Cargo license_file and pinned upstream fallback texts. */
 export function packageLicenseFiles(directory, declaredLicenseFile = null) {
   const files = new Set(licenseTextNames(directory));
   if (declaredLicenseFile) {
@@ -139,6 +164,14 @@ export function packageLicenseFiles(directory, declaredLicenseFile = null) {
     if (fs.existsSync(declared) && fs.statSync(declared).isFile()) files.add(path.relative(directory, declared));
   }
   return [...files].sort().map((name) => ({ name, text: fs.readFileSync(path.join(directory, name), 'utf8').replaceAll('\r\n', '\n').trimEnd() + '\n' }));
+}
+
+/** Include a pinned upstream license when the installed npm archive omits its text file. */
+export function packageLicenseFilesFor(entry, directory) {
+  const files = packageLicenseFiles(directory, entry.license_file);
+  const upstream = upstreamLicenseFiles.get(`${entry.name}@${entry.version}`);
+  if (upstream && !files.some(({ name }) => licenseFileName.test(name))) files.push(upstream);
+  return files;
 }
 
 function cargoMetadata(rootPath) {
@@ -180,7 +213,7 @@ function sourceRepository(packageJson) {
 function packageRows(entries, rootPath, directoryFor) {
   return entries.map((entry) => {
     const directory = directoryFor(entry, rootPath);
-    const files = packageLicenseFiles(directory, entry.license_file);
+    const files = packageLicenseFilesFor(entry, directory);
     const packageJsonPath = path.join(directory, 'package.json');
     let packageJson = null;
     try { packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')); } catch { /* Cargo crates do not use package.json. */ }
@@ -227,7 +260,7 @@ function renderLicenseTexts(rows) {
 
 function renderNpm(rows) {
   const sections = ['## npm runtime dependencies', '',
-    'The list follows `dependencies` and `optionalDependencies` from the root of `package-lock.json`, plus installed non-optional peer dependencies. Development-only packages and optional-peer-only packages are excluded. Nested install paths remain distinct in the generated data; package names and versions are shown below.', '',
+    'The list follows `dependencies` and `optionalDependencies` from the root of `package-lock.json`, plus peer dependencies resolved to lockfile entries. This includes optional peers present in the production install, such as `zod`; development-only packages and unresolved peers are excluded. Nested install paths remain distinct in the generated data; package names and versions are shown below.', '',
     renderPackageList(rows, npmName, (entry) => entry.version, (entry) => entry.installPath), '',
     '### Packaged npm licence and notice text', '',
     renderLicenseTexts(rows), ''];
@@ -235,10 +268,17 @@ function renderNpm(rows) {
 }
 
 function renderCargo(rows) {
+  const mplCrates = rows
+    .filter(({ entry }) => entry.license === 'MPL-2.0')
+    .map(({ entry }) => `${entry.name}@${entry.version}`)
+    .sort(compareText);
   const lines = [
     '## Tauri / Cargo runtime dependencies', '',
     'This inventory follows normal (`kind = null`) dependency edges from the `tabula-desktop` Cargo metadata root across all target-specific edges. Build and development dependencies and proc-macro-only crates (including their compile-time dependency subtrees) are excluded. Groups use each crate’s exact `Cargo.toml` licence expression; no expression is simplified or treated as legal advice.', '',
   ];
+  if (mplCrates.length) {
+    lines.push(`The following MPL-2.0 crates are unmodified and their source is available from crates.io at the listed versions: ${mplCrates.map(code).join(', ')}.`, '');
+  }
 
   for (const [license, packages] of groupBy(rows, (row) => row.entry.license || '(missing from Cargo metadata)')) {
     lines.push(`### ${code(license)} (${packages.length})`, '');

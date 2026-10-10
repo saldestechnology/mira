@@ -6,7 +6,7 @@ If an upstream archive contains a licence or notice file, its text is included b
 
 ## npm runtime dependencies
 
-The list follows `dependencies` and `optionalDependencies` from the root of `package-lock.json`, plus installed non-optional peer dependencies. Development-only packages and optional-peer-only packages are excluded. Nested install paths remain distinct in the generated data; package names and versions are shown below.
+The list follows `dependencies` and `optionalDependencies` from the root of `package-lock.json`, plus peer dependencies resolved to lockfile entries. This includes optional peers present in the production install, such as `zod`; development-only packages and unresolved peers are excluded. Nested install paths remain distinct in the generated data; package names and versions are shown below.
 
 | Package | Version | Declared licence expression | Packaged notice files | Install path |
 | --- | --- | --- | --- | --- |
@@ -21,13 +21,14 @@ The list follows `dependencies` and `optionalDependencies` from the root of `pac
 | `json-schema-to-ts` | `3.1.1` | `MIT` | `LICENSE` | `node_modules/json-schema-to-ts` |
 | `lib0` | `0.2.119` | `MIT` | `LICENSE` | `node_modules/lib0` |
 | `nodemailer` | `10.0.16` | `MIT-0` | `LICENSE` | `node_modules/nodemailer` |
-| `standardwebhooks` | `1.1.1` | `MIT` | No text file in package archive ([upstream source](https://github.com/standard-webhooks/standard-webhooks)) | `node_modules/standardwebhooks` |
+| `standardwebhooks` | `1.1.1` | `MIT` | `LICENSE (upstream libraries/LICENSE at b4d2c14fc5b4ccff3ff271e3b087dff812254c59)` | `node_modules/standardwebhooks` |
 | `ts-algebra` | `2.0.0` | `MIT` | `LICENSE` | `node_modules/ts-algebra` |
 | `ws` | `8.22.0` | `MIT` | `LICENSE` | `node_modules/ws` |
 | `y-indexeddb` | `9.0.12` | `MIT` | `LICENSE` | `node_modules/y-indexeddb` |
 | `y-protocols` | `1.0.7` | `MIT` | `LICENSE` | `node_modules/y-protocols` |
 | `y-websocket` | `3.1.0` | `MIT` | `LICENSE` | `node_modules/y-websocket` |
 | `yjs` | `13.6.33` | `MIT` | `LICENSE` | `node_modules/yjs` |
+| `zod` | `4.6.5` | `MIT` | `LICENSE` | `node_modules/zod` |
 
 ### Packaged npm licence and notice text
 
@@ -612,6 +613,34 @@ SOFTWARE.
 
 #### Source files
 
+- `standardwebhooks@1.1.1 (LICENSE (upstream libraries/LICENSE at b4d2c14fc5b4ccff3ff271e3b087dff812254c59))`
+
+```text
+The MIT License
+
+Copyright (c) 2023 Svix (https://www.svix.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+#### Source files
+
 - `ws@8.22.0 (LICENSE)`
 
 ```text
@@ -725,6 +754,34 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+#### Source files
+
+- `zod@4.6.5 (LICENSE)`
+
+```text
+MIT License
+
+Copyright (c) 2025 Colin McDonnell
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ### Build-time icon source package
 
 `@iconify/json 2.2.540` is a pinned build-time devDependency, not part of the runtime npm closure. Its package-level licence is MIT; the icon artwork remains subject to the individual set licences in the table below.
@@ -738,6 +795,8 @@ _No license or notice text was present in the source archives._
 ## Tauri / Cargo runtime dependencies
 
 This inventory follows normal (`kind = null`) dependency edges from the `tabula-desktop` Cargo metadata root across all target-specific edges. Build and development dependencies and proc-macro-only crates (including their compile-time dependency subtrees) are excluded. Groups use each crate’s exact `Cargo.toml` licence expression; no expression is simplified or treated as legal advice.
+
+The following MPL-2.0 crates are unmodified and their source is available from crates.io at the listed versions: `cssparser@0.37.0`, `dtoa-short@0.3.5`, `option-ext@0.2.0`, `selectors@0.38.0`.
 
 ### `(MIT OR Apache-2.0) AND Unicode-3.0` (1)
 
