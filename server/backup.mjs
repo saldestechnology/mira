@@ -144,6 +144,7 @@ function keySpellings(raw, bytes) {
  * @property {number} verifyMaxMb the most sealed megabytes one deep verify reads
  * @property {number} keepHourlyHours
  * @property {number} keepDailyDays
+ * @property {string | null} pullTokenSha256 bearer token SHA-256 for the directory export route, not enumerable
  * @property {string | undefined} accessKey not enumerable
  * @property {string | undefined} secretKey not enumerable
  * @property {Buffer} key the master key, not enumerable
@@ -163,6 +164,13 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
   const env = withLegacyEnv(rawEnv, warn);
   const target = backupVar(env, 'TARGET') || 's3';
   if (target !== 's3' && target !== 'dir') throw new Error('TABULA_BACKUP_TARGET must be s3 or dir');
+  const rawPullTokenSha256 = backupVar(env, 'PULL_TOKEN_SHA256');
+  let pullTokenSha256 = null;
+  if (rawPullTokenSha256) {
+    if (!HEX_KEY_RE.test(rawPullTokenSha256)) throw new Error('TABULA_BACKUP_PULL_TOKEN_SHA256 must be 64 hexadecimal characters');
+    if (target !== 'dir') throw new Error('TABULA_BACKUP_PULL_TOKEN_SHA256 requires TABULA_BACKUP_TARGET=dir');
+    pullTokenSha256 = rawPullTokenSha256.toLowerCase();
+  }
   const rawDir = backupVar(env, 'DIR');
   if (target === 'dir' && rawDir && !path.isAbsolute(rawDir)) throw new Error('TABULA_BACKUP_DIR must be an absolute path');
   const required = target === 'dir' ? ['KEY'] : REQUIRED;
@@ -264,7 +272,8 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
     secretKey: { value: secretKey },
     key: { value: key },
     previousKeys: { value: previousKeys },
-    secrets: { value: [...(target === 's3' ? [accessKey, secretKey] : []), ...spellings] },
+    pullTokenSha256: { value: pullTokenSha256 },
+    secrets: { value: [...(target === 's3' ? [accessKey, secretKey] : []), ...spellings, ...(pullTokenSha256 ? [pullTokenSha256, pullTokenSha256.toUpperCase()] : [])] },
   });
   return config;
 }

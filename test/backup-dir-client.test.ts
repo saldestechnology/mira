@@ -20,7 +20,7 @@ afterEach(() => {
 describe('the directory backup client', () => {
   it('puts, gets, heads, lists and deletes sealed bytes', async () => {
     const { client } = setup();
-    expect(Object.keys(client).sort()).toEqual(['del', 'get', 'head', 'list', 'put']);
+    expect(Object.keys(client).sort()).toEqual(['createReadStream', 'del', 'get', 'head', 'list', 'put']);
     const bytes = Buffer.from('sealed bytes');
     await client.put('tabula/objects/one', bytes);
 

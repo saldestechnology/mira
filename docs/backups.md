@@ -35,6 +35,7 @@ The default `s3` target is on when its five required variables are set. The `dir
 | --- | --- | --- |
 | `TABULA_BACKUP_TARGET` | `s3` | `s3` writes to the configured bucket; `dir` writes a local export directory |
 | `TABULA_BACKUP_DIR` | `<DATA_DIR>/backup-export` | For target `dir`, an optional absolute path for the local export. It is created when needed |
+| `TABULA_BACKUP_PULL_TOKEN_SHA256` | unset | For target `dir`, the 64-character SHA-256 hex digest of the bearer token allowed to pull the export. The token itself is held by the control plane |
 | `TABULA_BACKUP_S3_ENDPOINT` | required for `s3` | The S3 endpoint, for example `https://fly.storage.tigris.dev` or `https://<account>.r2.cloudflarestorage.com`. `https://`, or `http://` for `localhost`, `127.0.0.1` and `[::1]` only. A bare address: no credentials, path, query or fragment |
 | `TABULA_BACKUP_BUCKET` | required for `s3` | The bucket (3 to 63 lower case letters, digits, dots, hyphens) |
 | `TABULA_BACKUP_ACCESS_KEY` | required for `s3` | Access key id |
@@ -62,6 +63,21 @@ For target `s3`, give the credentials the least they need on that bucket (or pre
 Use `TABULA_BACKUP_TARGET=dir` when another process will pull the backup from the instance volume. It needs only `TABULA_BACKUP_KEY`; S3 settings are ignored. Set `TABULA_BACKUP_DIR` to an absolute path when the export should live somewhere else. By default the files go to `<DATA_DIR>/backup-export`.
 
 The directory holds the same encrypted, sealed objects and manifests that the S3 target writes. The machine holding this copy does not need the key, and nothing leaves the volume by itself: a separate puller must fetch or copy the files. The export directory lives on the instance volume and is excluded from every backup walk, so a backup never includes its own output. A whole-workspace restore also leaves the export directory in place.
+
+## Pulling the export
+
+The read-only pull route is off unless backups use target `dir` and `TABULA_BACKUP_PULL_TOKEN_SHA256` is set. The control plane keeps the bearer token and gives the instance only its SHA-256 digest. Send it as `Authorization: Bearer <token>`:
+
+```
+GET  /api/backup-export/list?prefix=<configured-prefix>/objects/&after=<key>&limit=<n>
+  -> { keys: [{ key, size, lastModified }], next: <key|null> }
+GET  /api/backup-export/object?key=<key>
+HEAD /api/backup-export/object?key=<key>
+```
+
+`prefix` is required and can name only the configured prefix's `objects` or `manifests` directory. Pages are sorted by key, default to 1000 entries and are capped at 1000; pass `next` as the exclusive `after` value for the next page. `HEAD` returns the object's size without its bytes. The route allows 120 requests and 400 MB of object bytes per sliding minute per workspace; an over-limit response has `429` and `Retry-After`.
+
+The route returns only the sealed AES-256-GCM objects and manifests, whose names are keyed hashes or manifest names. The puller cannot decrypt them without the backup key. The route is public to the instance (bearer only, no browser session) so a request can wake a stopped hosted machine; keep the token in the control plane and rotate it by changing the digest and token together.
 
 ## When it runs
 

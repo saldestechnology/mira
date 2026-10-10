@@ -35,6 +35,16 @@ function partsOf(value, { prefix = false } = {}) {
   return parts;
 }
 
+/** Whether a value is a valid file key using the directory target's key rules. */
+export function isValidDirKey(value) {
+  try {
+    partsOf(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function unsafePath() {
   return new BackupError('invalid_path', 'The backup path contains a symbolic link or is not a directory');
 }
@@ -172,6 +182,15 @@ export function createDirClient({ dir, signal = null }) {
     }
   }
 
+  /** A stream for a validated regular file; path inspection and no-follow open use the same mapping as get/head. */
+  function createReadStream(key) {
+    checkAbort(signal);
+    const found = inspect(key);
+    if (!found?.stat) return null;
+    if (!found.stat.isFile()) throw unsafePath();
+    return fs.createReadStream(found.file, { flags: fs.constants.O_RDONLY | NOFOLLOW });
+  }
+
   async function del(key) {
     checkAbort(signal);
     const found = inspect(key);
@@ -232,5 +251,5 @@ export function createDirClient({ dir, signal = null }) {
     }
   }
 
-  return { put, get, head, del, list };
+  return { put, get, head, createReadStream, del, list };
 }
