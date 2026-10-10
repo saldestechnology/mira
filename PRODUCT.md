@@ -8,19 +8,23 @@ web
 
 ## Users
 
-Facilitators and small teams who run workshops, retros, planning and everyday collaboration on a shared board, in a browser on desktop, tablet and phone. A second confirmed audience is education: a teacher running a class, with students joining as guests with a link (the site has an education page). Some users run the software themselves (self-hosting); others use the hosted service.
+Facilitators and small teams who run workshops, retros, planning and everyday collaboration on a shared board, in a browser. A second confirmed audience is education: a teacher running a class, with students joining as guests with a link (the site has an education page). Some users run the software themselves (self-hosting); others use the hosted service.
 
 ## Product Purpose
 
-Tabula is a shared whiteboard: sticky notes, shapes, connectors, frames and groups, kanban boards, workshop sessions (steps, shared timer, private writing, dot voting, polls), comments and chat, with accounts, teams and roles. It is free software (AGPL-3.0-only), works offline first and syncs through a relay when one is available. The tracker (an issue tracker that lives on the board, replacing Linear for the team) is built behind a feature flag. Success: a team can run a session or keep its work on one board without paying per seat for a hosted whiteboard, and without losing data when the network is bad.
+Tabula is a shared whiteboard: sticky notes, shapes, connectors, frames and groups, kanban boards, workshop sessions (steps, shared timer, private writing, dot voting, polls), comments and chat, with accounts, teams and roles. It is free software (AGPL-3.0-only), works offline first and syncs through a relay when one is available. An issue tracker that lives on the board is being dogfooded on the team's own workspace behind a feature flag; it is not shipped to customers and is not part of the public claims. Success: a team can run a session or keep its work on one board without paying per seat for a hosted whiteboard, and without losing data when the network is bad.
 
 ## Positioning
 
-OPEN: to be worded with CGO. Johan delegated the positioning answer to the CGO agent. What the repository already states as fact: free software under AGPL-3.0, self-hostable, local-first with relay sync, a hosted option, workshop facilitation built into the board.
+Wording from the CGO agent (Johan delegated it), to be used as written:
+
+"Tabula is free software you can run yourself: the same AGPL-3.0 app that powers our hosted workspaces runs on your own server, and every board works offline and syncs when it reconnects. Workshop facilitation is part of the board rather than an add-on: steps, a shared timer, private writing, dot voting and polls, with kanban alongside. Agents can read and edit boards through MCP, and people see every change."
+
+No prices, numbers or competitor names in positioning copy. Claims about tablets, phones or classrooms, and about the tracker, are not made until they are verified and shipped (see Capabilities and Constraints).
 
 ## Operating Context
 
-Boards are shared by URL. Open mode (no accounts) and accounts mode (teams, roles, guests joining with a code) both exist. The app is used on laptops, iPads in classrooms and phones. Hosted workspaces run the same open-source app; the marketing site (gettabula.app) and the user guide are separate surfaces in the same brand family.
+Boards are shared by URL. Open mode (no accounts) and accounts mode (teams, roles, guests joining with a code) both exist. The app is used on laptops. iPad and iPhone touch support is built but unverified on real devices until Johan's device check, so it is not claimed. Hosted workspaces run the same open-source app; the marketing site (gettabula.app) and the user guide are separate surfaces in the same brand family.
 
 ## Capabilities and Constraints
 
@@ -47,4 +51,4 @@ The README, `docs/` (specs, user guide in `docs/guide`), `docs/brand.md`, screen
 
 ## Accessibility & Inclusion
 
-WCAG AA contrast and focus visibility, 44 px touch targets on touch devices, full keyboard operation, reduced-motion respect, and screen-reader names for controls. Classroom use on iPads and phones is a first-class case.
+WCAG AA contrast and focus visibility, 44 px touch targets on touch devices, full keyboard operation, reduced-motion respect, and screen-reader names for controls. Phone and tablet use is a design target (touch targets, soft-keyboard behaviour), but it is not claimed publicly until verified on real devices.
