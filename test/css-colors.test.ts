@@ -10,7 +10,7 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 // the modal scrim, and the white field behind the class and label editors (the fallback when the
 // object has no colours of its own; editor.ts sets those inline).
 const ALLOWED: { file: string; selector: string; literals: string[] }[] = [
-  { file: 'src/styles.css', selector: '.remote-cursor span', literals: ['#fff'] },
+  { file: 'src/styles.css', selector: '.remote-cursor-name', literals: ['#fff'] },
   { file: 'src/styles.css', selector: '.avatar', literals: ['#fff'] },
   { file: 'src/styles.css', selector: "[data-tool='sticky']::after", literals: ['#FFE16B'] },
   { file: 'src/styles.css', selector: '.note::after', literals: ['#fff'] },

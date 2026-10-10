@@ -3,7 +3,7 @@
   width: 100%; min-width: 0; min-height: 100%; padding: 16px 24px 32px; border-radius: 0;
   background: var(--paper-hi, var(--paper)); color: var(--ink);
 }
-.trk.tk-page button, .trk.tk-page input, .trk.tk-page textarea { border-radius: 0; }
+.trk.tk-page button, .trk.tk-page input, .trk.tk-page textarea { border-radius: var(--radius-sm, 8px); }
 .trk.tk-page .tk-header {
   position: relative; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 44px;
   padding: 0 0 10px; border-bottom: 1px solid var(--ink);
@@ -24,7 +24,10 @@
 .trk.tk-page .tk-bell-icon { flex: none; }
 .trk.tk-page .tk-field-button:disabled, .trk.tk-page button:disabled { color: var(--graphite); opacity: .82; cursor: not-allowed; }
 .trk.tk-page .tk-header-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.trk.tk-page .tk-icon-button { min-width: 36px; padding: 4px 8px; font-size: 20px; }
+.trk.tk-page .tk-icon-button { min-width: 36px; padding: 4px 8px; font-size: 20px; font-weight: 500; line-height: 1; }
+.trk.tk-page .tk-copy-glyph { color: var(--graphite); font-size: 14px; font-weight: 400; }
+.trk.tk-page .tk-header-key { flex: none; }
+.trk.tk-page .tk-header-tools { flex: none; }
 .trk.tk-page .tk-more-menu { position: absolute; z-index: 4; top: 42px; right: 42px; display: grid; min-width: 180px; padding: 4px; border: 1px solid var(--ink); background: var(--paper-hi, var(--paper)); }
 .trk.tk-page .tk-menu-item { justify-content: flex-start; border: 0; min-height: 40px; }
 .trk.tk-page .tk-menu-item:hover, .trk.tk-page .tk-button--secondary:hover, .trk.tk-page .tk-tab-button:hover { background: var(--canvas, var(--paper)); }

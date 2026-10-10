@@ -62,7 +62,9 @@ export function formatRelative(now: number, iso: string): string {
   const delta = then - now;
   const future = delta > 0;
   const seconds = Math.abs(delta) / 1000;
-  if (seconds < 60) return future ? 'in under a minute' : 'just now';
+  // a time ahead of this clock is clock skew between server and client, never news: show it as now
+  if (future) return 'just now';
+  if (seconds < 60) return 'just now';
   const units: [number, string][] = [
     [60 * 60 * 24 * 365, 'year'], [60 * 60 * 24 * 30, 'month'], [60 * 60 * 24 * 7, 'week'],
     [60 * 60 * 24, 'day'], [60 * 60, 'hour'], [60, 'minute'],
@@ -70,7 +72,7 @@ export function formatRelative(now: number, iso: string): string {
   const [size, unit] = units.find(([secondsPerUnit]) => seconds >= secondsPerUnit)!;
   const amount = Math.floor(seconds / size);
   const text = `${amount} ${unit}${amount === 1 ? '' : 's'}`;
-  return future ? `in ${text}` : `${text} ago`;
+  return `${text} ago`;
 }
 
 export function relativeTime(now: number, iso: string): HTMLTimeElement {

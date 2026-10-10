@@ -630,7 +630,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
 
   /** Raw bytes in, JSON out (an image upload). The server decides the type from the bytes; `type` is only what we declare. */
   async function sendBytes<T>(path: string, bytes: Blob, type: string, timeoutMs = ASSET_TIMEOUT_MS): Promise<T> {
-    const init: RequestInit = { method: 'POST', credentials: 'same-origin', headers: { accept: 'application/json', 'x-tabula': '1', 'content-type': type }, body: bytes };
+    const init: RequestInit = { method: 'POST', credentials: 'same-origin', redirect: 'manual', headers: { accept: 'application/json', 'x-tabula': '1', 'content-type': type }, body: bytes };
     if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) init.signal = AbortSignal.timeout(timeoutMs);
     let res: Response;
     try {
@@ -638,6 +638,9 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     } catch {
       throw new ApiError(0, 'network', 'network');
     }
+    // A manual cross-origin redirect can be opaque (status 0); keep it in the upload failure path as a redirect.
+    if (res.type === 'opaqueredirect') throw new ApiError(307, 'redirect', 'redirect');
+    if (res.redirected) throw new ApiError(res.status || 307, 'redirect', 'redirect');
     const body = await readBody(res);
     if (!res.ok) throw failure(res, body);
     if (!body.valid) throw new ApiError(res.status, 'unknown', 'unknown');

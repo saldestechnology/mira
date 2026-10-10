@@ -18,6 +18,7 @@ export const COLOR_FIELDS: ReadonlySet<string> = new Set(['fill', 'stroke', 'tex
 /** Boolean flags on an object: a value that is not true or false is not written (TAB-198, TAB-203). */
 const FLAG_FIELDS: ReadonlySet<string> = new Set(['hidden', 'locked', 'flipX', 'flipY']);
 const BOX_FLAG_FIELDS: ReadonlySet<string> = new Set(['flipX', 'flipY']);
+const TRACKER_CARD_PROJECTION_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker']);
 
 export const DEFAULT_META: BoardMeta = {
   name: 'Untitled board',
@@ -398,7 +399,12 @@ export class Store {
     const checked = (k: string) => COLOR_FIELDS.has(k) && !isContainerType(stored.type);
     // a flag such as `hidden` (TAB-198) is a boolean or absent; anything else is left out rather than read as truthy
     const entries = Object.entries(stored)
-      .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null) && (!FLAG_FIELDS.has(k) || typeof v === 'boolean') && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored))))
+      .filter(([k, v]) => v !== undefined
+        && !(stored.type === 'card' && TRACKER_CARD_PROJECTION_FIELDS.has(k))
+        && k !== 'ext'
+        && (!checked(k) || cleanColor(v) !== null)
+        && (!FLAG_FIELDS.has(k) || typeof v === 'boolean')
+        && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored))))
       .map(([k, v]): [string, unknown] => [k, checked(k) ? cleanColor(v) : v]);
     this.objects.set(o.id, new Y.Map(entries));
     if (isContainerType(o.type)) this.needFeature(FEATURES.containers);
@@ -412,8 +418,11 @@ export class Store {
     let wroteField = false;
     let parentChanged = false;
     for (const [k, raw] of Object.entries(patch)) {
+      const currentType = m.get('type');
+      const type = (patch as Record<string, unknown>).type ?? currentType;
+      if ((currentType === 'card' || type === 'card') && TRACKER_CARD_PROJECTION_FIELDS.has(k)) continue;
+      if (k === 'ext') continue;
       if (group && ['x', 'y', 'w', 'h', 'rotation'].includes(k)) continue;
-      const type = (patch as Record<string, unknown>).type ?? m.get('type');
       if (BOX_FLAG_FIELDS.has(k) && (type === 'connector' || type === 'group')) continue;
       if (type === 'tracker' && k === 'rotation') continue;
       if (raw === undefined) {

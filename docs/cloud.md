@@ -4,6 +4,8 @@ Tabula can run as one workspace of a hosted service: a separate control plane (b
 
 Not in it: creating or deleting the instance, Stripe, routing. Those belong to the control plane.
 
+Fly's edge replays hosted requests, but Fly cannot replay request bodies over 1 MB; TAB-127 documents how image uploads stay visible and retry.
+
 ## Turning it on
 
 | Variable | Meaning |

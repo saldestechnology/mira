@@ -13,21 +13,29 @@ type IconName = Parameters<typeof icon>[0];
 const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 /** The entries for a selection of `count` objects, all locked or not. */
-export function contextMenuItems({ count, locked, groupReason = 'Select at least two groupable items.', canUngroup = false, flipHorizontalReason = null, flipVerticalReason = null }: { count: number; locked: boolean; groupReason?: string | null; canUngroup?: boolean; flipHorizontalReason?: string | null; flipVerticalReason?: string | null }): ContextItem[] {
+export function contextMenuItems({ count, locked, touch = false, groupReason = 'Select at least two groupable items.', canUngroup = false, flipHorizontalReason = null, flipVerticalReason = null }: {
+  count: number;
+  locked: boolean;
+  touch?: boolean;
+  groupReason?: string | null;
+  canUngroup?: boolean;
+  flipHorizontalReason?: string | null;
+  flipVerticalReason?: string | null;
+}): ContextItem[] {
   if (count === 0) return [];
   const mod = isMac() ? 'Cmd' : 'Ctrl';
   return [
-    { action: 'front', label: 'Bring to front', hint: ']', icon: 'front' },
-    { action: 'forward', label: 'Bring forward', hint: `${mod}+]`, icon: 'forward' },
-    { action: 'backward', label: 'Send backward', hint: `${mod}+[`, icon: 'backward' },
-    { action: 'back', label: 'Send to back', hint: '[', icon: 'back' },
-    { action: 'group', label: 'Group', hint: `${mod}+G`, icon: 'group', disabled: groupReason !== null, reason: groupReason ?? undefined, separatorBefore: true },
-    { action: 'ungroup', label: 'Ungroup', hint: `Shift+${mod}+G`, icon: 'ungroup', disabled: !canUngroup, reason: canUngroup ? undefined : 'Select one or more groups to ungroup.' },
-    { action: 'flipHorizontal', label: 'Flip horizontal', hint: 'Shift+H', icon: 'flipHorizontal', disabled: flipHorizontalReason !== null, reason: flipHorizontalReason ?? undefined, separatorBefore: true },
-    { action: 'flipVertical', label: 'Flip vertical', hint: 'Shift+V', icon: 'flipVertical', disabled: flipVerticalReason !== null, reason: flipVerticalReason ?? undefined },
-    { action: 'duplicate', label: 'Duplicate', hint: `${mod}+D`, icon: 'dup', separatorBefore: true },
+    { action: 'front', label: 'Bring to front', hint: touch ? undefined : ']', icon: 'front' },
+    { action: 'forward', label: 'Bring forward', hint: touch ? undefined : `${mod}+]`, icon: 'forward' },
+    { action: 'backward', label: 'Send backward', hint: touch ? undefined : `${mod}+[`, icon: 'backward' },
+    { action: 'back', label: 'Send to back', hint: touch ? undefined : '[', icon: 'back' },
+    { action: 'group', label: 'Group', hint: touch ? undefined : `${mod}+G`, icon: 'group', disabled: groupReason !== null, reason: groupReason ?? undefined, separatorBefore: true },
+    { action: 'ungroup', label: 'Ungroup', hint: touch ? undefined : `Shift+${mod}+G`, icon: 'ungroup', disabled: !canUngroup, reason: canUngroup ? undefined : 'Select one or more groups to ungroup.' },
+    { action: 'flipHorizontal', label: 'Flip horizontal', hint: touch ? undefined : 'Shift+H', icon: 'flipHorizontal', disabled: flipHorizontalReason !== null, reason: flipHorizontalReason ?? undefined, separatorBefore: true },
+    { action: 'flipVertical', label: 'Flip vertical', hint: touch ? undefined : 'Shift+V', icon: 'flipVertical', disabled: flipVerticalReason !== null, reason: flipVerticalReason ?? undefined },
+    { action: 'duplicate', label: 'Duplicate', hint: touch ? undefined : `${mod}+D`, icon: 'dup', separatorBefore: true },
     { action: 'lock', label: locked ? 'Unlock' : 'Lock', icon: locked ? 'unlock' : 'lock' },
-    { action: 'delete', label: 'Delete', hint: 'Del', icon: 'trash', danger: true },
+    { action: 'delete', label: 'Delete', hint: touch ? undefined : 'Del', icon: 'trash', danger: true },
   ];
 }
 
@@ -59,6 +67,7 @@ export function openContextMenu(app: BoardApp, x: number, y: number, touch = fal
     canUngroup: app.canUngroupSelection(),
     flipHorizontalReason: app.flipReason('horizontal'),
     flipVerticalReason: app.flipReason('vertical'),
+    touch,
   });
   if (!items.length || app.readOnly) return;
   // the popover places itself against an element: a one pixel anchor at the pointer

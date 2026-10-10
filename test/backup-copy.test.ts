@@ -306,7 +306,6 @@ describe('a copy that fails or is stopped', () => {
     expect(workers).toHaveLength(1);
     // A thread that was left to finish would copy the database and say so; this one is gone before it can.
     await workers[0].exited;
-    await sleep(50);
     expect(workers[0].answers).toBe(0);
     expect(temps()).toEqual([]);
     expect(h.fake.keys(/manifests/)).toEqual([]);
@@ -331,7 +330,6 @@ describe('a copy that fails or is stopped', () => {
     expect(await run).toMatchObject({ ok: false, aborted: true });
     await seen[0].exited;
     await until(() => temps().length === 0);
-    await sleep(50);
     expect(seen[0].answers).toBe(0);
     expect(temps()).toEqual([]);
     expect(h.fake.keys(/manifests/)).toEqual([]);

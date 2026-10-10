@@ -33,7 +33,7 @@ async function startRelay(): Promise<Relay> {
       TABULA_BASE_URL: `http://127.0.0.1:${port}`,
       ...envFor(h.fake),
       TABULA_BACKUP_SETTLE_SECONDS: '1',
-      TABULA_BACKUP_SNAPSHOT_MAX_HOLD_SECONDS: '5',
+      TABULA_BACKUP_SNAPSHOT_MAX_HOLD_SECONDS: '60',
       TABULA_TEST_SNAPSHOT_CAPTURE_DELAY_MS: '1000',
       SAVE_DEBOUNCE_MS: '50',
     }),
@@ -56,6 +56,14 @@ async function connect(relay: Relay, room: string) {
   providers.push(provider);
   await until(() => provider.wsconnected && provider.synced, 5000, 'could not connect to the relay');
   return { doc, provider };
+}
+
+async function pong(ws: WebSocket) {
+  await new Promise<void>((resolve, reject) => {
+    ws.once('pong', resolve);
+    ws.once('error', reject);
+    ws.ping();
+  });
 }
 
 afterEach(async () => {
@@ -81,7 +89,9 @@ describe('the relay snapshot barrier', { timeout: 30_000 }, () => {
     await until(() => relay.out().includes('snapshot barrier started'), 20_000, 'the settle backup did not start a snapshot');
 
     writer.doc.getMap('markers').set('point', 'after');
-    await sleep(150);
+    const writerSocket = writer.provider.ws as unknown as WebSocket | null;
+    if (!writerSocket) throw new Error('writer socket is not connected');
+    await pong(writerSocket);
     expect(watcher.doc.getMap('markers').get('point')).toBe('before');
     expect(writer.provider.wsconnected).toBe(true);
     expect(watcher.provider.wsconnected).toBe(true);

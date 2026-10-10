@@ -4,15 +4,18 @@
 import type { BaseObj, Id } from './types';
 import { assetUrl, imageFields, isHash, isPending } from './images';
 import type { BlobCache } from './asset-store';
+import { IMAGE_UPLOAD_MESSAGES } from './image-messages';
 
 export type ImageState =
   | { kind: 'ok'; url: string }
   | { kind: 'loading' }
   /** Why there is nothing to draw: shown on the placeholder. */
-  | { kind: 'failed'; why: 'not_uploaded' | 'offline' | 'denied' | 'missing' | 'invalid' };
+  | { kind: 'failed'; why: 'not_uploaded' | 'lost' | 'toobig' | 'offline' | 'denied' | 'missing' | 'invalid' };
 
 export const FAILED_LABEL: Record<Extract<ImageState, { kind: 'failed' }>['why'], string> = {
   not_uploaded: 'Image not uploaded yet',
+  lost: 'Not uploaded: add this image again',
+  toobig: IMAGE_UPLOAD_MESSAGES.tooBigLabel,
   offline: 'Offline',
   denied: 'No access to this image',
   missing: 'Image not found',
@@ -26,6 +29,8 @@ export interface LoaderDeps {
   boardId: string;
   cache: BlobCache;
   fetchFn?: FetchFn;
+  /** The local queue state for a pending asset, when this browser has an upload record. */
+  uploadState?: (asset: string) => Promise<'queued' | 'lost' | 'refused' | 'toobig' | undefined>;
   /** Called with the ids of the objects whose answer changed, so the renderer redraws them. */
   changed: (ids: Id[]) => void;
   createUrl?: (blob: Blob) => string;
@@ -68,10 +73,10 @@ export class ImageLoader {
     return loading;
   }
 
-  /** Forget every failure that waiting could fix (the connection is back), so the next draw asks again. */
+  /** Forget retryable failures so the next draw asks for the current queue state again. */
   retryFailed() {
     for (const [asset, s] of this.states) {
-      if (s.kind === 'failed' && (s.why === 'offline' || s.why === 'denied' || s.why === 'not_uploaded')) this.set(asset, undefined, true);
+      if (s.kind === 'failed' && (s.why === 'offline' || s.why === 'denied' || s.why === 'not_uploaded' || s.why === 'lost' || s.why === 'toobig')) this.set(asset, undefined, true);
     }
   }
 
@@ -108,7 +113,15 @@ export class ImageLoader {
     try {
       const local = await this.deps.cache.get(asset);
       if (local) return this.ready(asset, local.blob);
-      if (isPending(asset)) return this.set(asset, { kind: 'failed', why: 'not_uploaded' });
+      if (isPending(asset)) {
+        let state: Awaited<ReturnType<NonNullable<LoaderDeps['uploadState']>>>;
+        try {
+          state = await this.deps.uploadState?.(asset);
+        } catch {
+          state = undefined;
+        }
+        return this.set(asset, { kind: 'failed', why: state === 'toobig' ? 'toobig' : state === 'lost' || state === 'refused' ? 'lost' : 'not_uploaded' });
+      }
       if (!isHash(asset)) return this.set(asset, { kind: 'failed', why: 'invalid' });
       let res: Awaited<ReturnType<FetchFn>>;
       try {

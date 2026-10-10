@@ -37,6 +37,7 @@ import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, personColor } from './palette';
 import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
+import { guestMark } from './ui/guest-mark';
 import { escapeAction } from './ui/escape-priority';
 import { watchCardHeights } from './card-height-heal';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
@@ -191,6 +192,10 @@ export class BoardApp {
   openKanbanMenu: ((kind: KanbanMenuKind, id: Id, at: Rect) => void) | null = null;
   /** Set by the board UI: opens a kanban as a list (src/ui/container-sheet.ts), on one of its lanes. */
   openSheet: ((containerId: Id, laneId?: Id) => void) | null = null;
+  /** Set by the board UI while the workspace tracker is enabled: opens the registered kanban link flow. */
+  linkTrackerKanban: ((containerId: Id) => void) | null = null;
+  /** Set by the board UI while the workspace tracker is enabled: opens the registered unlink confirmation. */
+  unlinkTrackerKanban: ((containerId: Id) => void) | null = null;
   /** Set by the board UI: opens the object menu at a screen position. */
   openObjectMenu: ((x: number, y: number) => void) | null = null;
   /** Set by the board UI: closes its open library drawer or Comments/Chat tray when Escape reaches it. */
@@ -198,7 +203,7 @@ export class BoardApp {
   /** Set by the board UI: gets image files pasted from the clipboard. */
   onImageFiles: ((files: File[]) => void) | null = null;
 
-  constructor(readonly conn: BoardConn, readonly user: User, parent: HTMLElement) {
+  constructor(readonly conn: BoardConn, readonly user: User, parent: HTMLElement, readonly hostedWorkspace = false) {
     this.store = conn.store;
     this.r = new Renderer(this.store, parent);
     this.r.readOnly = this.readOnly;
@@ -2898,13 +2903,28 @@ export class BoardApp {
       if (!el) {
         el = document.createElement('div');
         el.className = 'remote-cursor';
-        el.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 1.5l13 6-5.6 1.6L7 15z" fill="currentColor" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg><span></span>`;
+        el.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18"><path d="M2 1.5l13 6-5.6 1.6L7 15z" fill="currentColor" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+        const label = document.createElement('div');
+        label.className = 'remote-cursor-label';
+        const name = document.createElement('span');
+        name.className = 'remote-cursor-name';
+        label.appendChild(name);
+        el.appendChild(label);
         this.r.cursorLayer.appendChild(el);
         this.cursorEls.set(c.id, el);
       }
       el.style.color = c.color;
-      el.querySelector('span')!.textContent = c.guest ? `${c.name} · Guest` : c.name;
-      (el.querySelector('span') as HTMLSpanElement).style.background = c.color;
+      const label = el.querySelector('.remote-cursor-label')!;
+      const name = label.querySelector('.remote-cursor-name') as HTMLSpanElement;
+      name.textContent = c.name;
+      name.style.background = c.color;
+      let guestBadge = label.querySelector('.remote-cursor-guest') as HTMLSpanElement | null;
+      if (c.guest && !guestBadge) {
+        guestBadge = guestMark('comment-badge comment-guest remote-cursor-guest') as HTMLSpanElement;
+        label.appendChild(guestBadge);
+      } else if (!c.guest) {
+        guestBadge?.remove();
+      }
       const s = this.r.toScreen(c.p);
       el.style.transform = `translate(${s.x}px, ${s.y}px)`;
     }

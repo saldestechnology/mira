@@ -60,14 +60,14 @@ describe('UI chrome radii', () => {
     const zero = ALL_RULES.flatMap((rule) => rule.body.match(/border-radius\s*:\s*0(?:\s*px)?\s*(?:!important\s*)?;/g)?.map((value) => `${relative(ROOT, rule.file)} ${rule.selector}: ${value}`) ?? []);
     const boardContent = [
       ".text-editor[data-mode='class']",
-      '.remote-cursor span',
+      '.remote-cursor-name',
     ];
     const intentional = zero.filter((entry) => boardContent.some((selector) => entry.endsWith(`${selector}: border-radius: 0;`)));
     expect(zero.filter((entry) => !intentional.includes(entry))).toEqual([]);
     expect(intentional).toHaveLength(boardContent.length);
     expect(intentional).toEqual(expect.arrayContaining([
       `src/styles.css .text-editor[data-mode='class']: border-radius: 0;`,
-      'src/styles.css .remote-cursor span: border-radius: 0;',
+      'src/styles.css .remote-cursor-name: border-radius: 0;',
     ]));
     const mentions = (selector: string, base: string) => new RegExp(`(?:^|[\\s,>+~])${base.replaceAll('.', '\\.')}($|[\\s.#:\\[>+~])`).test(selector);
     const curatedZero = ALL_RULES.filter((rule) => /border-radius\s*:\s*0(?:\s*px)?\s*(?:!important\s*)?;/.test(rule.body)
@@ -82,7 +82,8 @@ describe('UI chrome radii', () => {
     const value = (selector: string) => parsed.find((rule) => rule.selector === selector)?.body.match(/border-radius\s*:\s*([^;]+)/)?.[1].trim();
     expect(value(".text-editor[data-mode='class']")).toBe('0');
     expect(value(".text-editor[data-mode='label']")).toBe('var(--radius-xs)');
-    expect(value('.remote-cursor span')).toBe('0');
+    expect(value('.remote-cursor-name')).toBe('0');
+    expect(value('.remote-cursor-guest')).toBe('var(--radius-xs)');
 
     const markup = readFileSync(join(ROOT, 'src/markup.ts'), 'utf8');
     expect(markup).toMatch(/rx="4" fill="\$\{PAPER\}"/);

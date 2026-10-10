@@ -21,8 +21,10 @@ describe('tracker UI styles', () => {
     expect(css).toContain('outline-offset: 2px');
     expect(css).toContain(".trk .trk-list-row[aria-selected='true'] { box-shadow: inset 0 0 0 1px var(--signal); }");
     expect(css).toContain('(pointer: coarse), (max-width: 860px)');
-    expect(css).toMatch(/\.trk input, \.trk select, \.trk \.trk-picker-search,[\s\S]*?\.trk-filter-value \{ min-height: 44px; \}/);
+    expect(css).toMatch(/\.trk input, \.trk select, \.trk \.trk-picker-search,[\s\S]*?\.trk-filter-input \{ min-height: 44px; \}/);
     expect(css).toMatch(/\.trk \.trk-filter-button,[\s\S]*?\.trk-gallery-picker-button \{ min-height: 44px; \}/);
+    expect(css).toContain('width: 280px; min-width: 280px');
+    expect(css).toContain('.trk-board-lanes.is-phone-lane .trk-board-lane');
     expect(css).toContain('min-height: 48px');
     expect(css).toContain('prefers-reduced-motion: reduce');
     expect(css).toContain('forced-colors: active');

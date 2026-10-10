@@ -5,6 +5,7 @@ import {
   cacheServerBoards,
   cachedServerBoards,
   initAuth,
+  isHostedWorkspace,
   onAuth,
   setSignedIn,
   signOut,
@@ -233,9 +234,39 @@ describe('api client errors', () => {
     await expect(createApi(fetchFn).boards()).rejects.toBeInstanceOf(ApiError);
     await expect(createApi(fetchFn).boards()).rejects.toMatchObject({ status: 0, code: 'network' });
   });
+
+  it.each([307, 308, 502, 504])('preserves upload failure status %i without following a redirect', async (status) => {
+    let init: RequestInit | undefined;
+    const fetchFn = (async (_input: RequestInfo | URL, request?: RequestInit) => {
+      init = request;
+      return new Response(null, { status });
+    }) as typeof fetch;
+
+    await expect(createApi(fetchFn).uploadAsset('b1', new Blob([new Uint8Array([1])]), 'image/png'))
+      .rejects.toMatchObject({ status });
+    expect(init?.redirect).toBe('manual');
+  });
+
+  it('turns an opaque upload redirect into a numeric retryable error', async () => {
+    const response = new Response(null, { status: 200 });
+    Object.defineProperty(response, 'type', { value: 'opaqueredirect' });
+    const fetchFn = (async () => response) as typeof fetch;
+
+    await expect(createApi(fetchFn).uploadAsset('b1', new Blob([new Uint8Array([1])]), 'image/png'))
+      .rejects.toMatchObject({ status: 307, code: 'redirect' });
+  });
 });
 
 describe('initAuth', () => {
+  it('derives hosted mode from the existing /api/me workspace field', () => {
+    const workspace = { readOnly: false, banner: null, seatLimit: 4, seatsUsed: 2 };
+    expect(isHostedWorkspace({ mode: 'open' })).toBe(false);
+    expect(isHostedWorkspace({ mode: 'signed-in', me })).toBe(false);
+    expect(isHostedWorkspace({ mode: 'signed-in', me: { ...me, workspace } })).toBe(true);
+    expect(isHostedWorkspace({ mode: 'offline', me: { ...me, workspace } })).toBe(true);
+    expect(isHostedWorkspace({ mode: 'offline', me: null })).toBe(false);
+  });
+
   it('stays in open mode without calling me when accounts are off', async () => {
     const { fetchFn, calls } = serve({ '/api/config': () => json({ authEnabled: false }) });
     expect(await initAuth(createApi(fetchFn))).toEqual({ mode: 'open' });

@@ -13,6 +13,10 @@ export { IMAGE_TYPES, MAX_PIXELS, MAX_SIDE, gifFrames, readImageInfo, sizeOk, sn
 export const MAX_STORED_SIDE = 2560;
 /** The file cap of the server (TABULA_ASSET_MAX_BYTES); the browser stops before it uploads what would be refused. */
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+/** Hosted workspaces aim below Fly's request replay limit so normal uploads have headroom. */
+export const HOSTED_UPLOAD_TARGET_BYTES = 900_000;
+/** The request body limit for hosted workspaces behind Fly's replaying edge. */
+export const HOSTED_UPLOAD_LIMIT_BYTES = 1_000_000;
 /** Files added by one paste, drop or pick. */
 export const MAX_FILES_PER_ACTION = 10;
 /** Opaque PNGs at least this large are also tried as JPEG. */
@@ -85,6 +89,45 @@ export function planEncoding(input: { type: StoredType; width: number; height: n
   const candidates: Plan['candidates'] = [{ type: 'image/png' }];
   if (!input.hasAlpha && input.bytes >= LARGE_PNG_BYTES) candidates.push({ type: 'image/jpeg', quality: 0.85 });
   return { ...base, candidates };
+}
+
+export interface ShrinkStep {
+  type: 'image/png' | 'image/jpeg' | 'image/webp';
+  width: number;
+  height: number;
+  quality?: number;
+}
+
+/**
+ * Encodings to try after the normal plan is still over `target`. `bytes` is the normal plan result size; `width` and
+ * `height` are its planned dimensions. The caller stops at the first result under target and keeps the smallest result.
+ */
+export function shrinkLadder(input: { type: StoredType; hasAlpha: boolean; width: number; height: number; bytes: number; target: number }): ShrinkStep[] {
+  const { type, hasAlpha, width, height, bytes, target } = input;
+  if (bytes <= target || type === 'image/gif') return [];
+
+  const qualities = [0.8, 0.7, 0.6, 0.5];
+  const smaller: { width: number; height: number }[] = [];
+  let side = Math.max(width, height);
+  while (side > 640) {
+    side = Math.max(640, Math.round(side * 0.85));
+    const next = scaleDown(width, height, side);
+    smaller.push({ width: next.width, height: next.height });
+  }
+  const atSize = (size: { width: number; height: number }, mime: ShrinkStep['type'], qs: number[]) =>
+    qs.map((quality) => ({ type: mime, width: size.width, height: size.height, quality }));
+
+  if (type === 'image/jpeg' || type === 'image/webp') {
+    return [
+      ...atSize({ width, height }, type, qualities),
+      ...smaller.flatMap((size) => atSize(size, type, qualities)),
+    ];
+  }
+  if (hasAlpha) return smaller.map((size) => ({ type: 'image/png', width: size.width, height: size.height }));
+  return [
+    ...atSize({ width, height }, 'image/jpeg', [0.85, 0.75, 0.65]),
+    ...smaller.flatMap((size) => atSize(size, 'image/jpeg', qualities)),
+  ];
 }
 
 /**

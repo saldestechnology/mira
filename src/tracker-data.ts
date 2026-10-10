@@ -13,6 +13,10 @@ import {
   type TrackerInboxPage,
   type TrackerListQuery,
   type TrackerLabel,
+  type TrackerKanbanLink,
+  type TrackerLinkKanbanInput,
+  type TrackerLinkKanbanResult,
+  type TrackerLinkSuggestion,
   type TrackerMeta,
   type TrackerNotificationPrefs,
   type TrackerProject,
@@ -52,6 +56,7 @@ export interface TrackerUpdateOptions { ifUpdatedSeq?: number }
 export interface TrackerProjectListOptions extends TrackerRequestOptions { includeArchived?: boolean }
 export interface TrackerSavedViewRunQuery { limit?: number; cursor?: string }
 export interface TrackerSavedViewPage { tickets: TrackerTicket[]; nextCursor: string | null; view: TrackerSavedView }
+export interface TrackerLinkOptions extends TrackerRequestOptions { force?: boolean }
 
 /** Typed transport for every public tracker endpoint used by the app. */
 export interface TrackerApi {
@@ -69,6 +74,10 @@ export interface TrackerApi {
   updateView(id: string, patch: TrackerSavedViewPatch, options?: TrackerRequestOptions): Promise<{ view: TrackerSavedView }>;
   deleteView(id: string, options?: TrackerRequestOptions): Promise<void>;
   listTickets(query?: TrackerListQuery, options?: TrackerListOptions): Promise<TrackerTicketListPage>;
+  listLinks(boardId: string, options?: TrackerRequestOptions): Promise<{ links: TrackerKanbanLink[] }>;
+  suggestLinkMapping(boardId: string, kanbanId: string, options?: TrackerRequestOptions): Promise<{ suggestion: TrackerLinkSuggestion }>;
+  linkKanban(input: TrackerLinkKanbanInput, options?: TrackerRequestOptions): Promise<TrackerLinkKanbanResult>;
+  unlinkKanban(id: string, options?: TrackerRequestOptions): Promise<{ ok: true; unlinked: number }>;
   ticketsUpdatedSince(seq: number, options?: TrackerRequestOptions): Promise<TrackerUpdatedTickets>;
   createTicket(input: TrackerCreateInput, options?: TrackerRequestOptions): Promise<{ ticket: TrackerTicket }>;
   getTicket(key: string, options?: TrackerRequestOptions): Promise<TrackerTicketDetail>;
@@ -148,15 +157,16 @@ function isErrorCode(value: unknown): value is TrackerErrorCode {
   return value === 'invalid_input' || value === 'invalid_filter' || value === 'not_found'
     || value === 'forbidden' || value === 'conflict' || value === 'read_only'
     || value === 'limit_exceeded' || value === 'rate_limited' || value === 'internal'
-    || value === 'offline' || value === 'network';
+    || value === 'offline' || value === 'network' || value === 'invalid_mapping'
+    || value === 'already_linked' || value === 'kanban_not_found' || value === 'board_forbidden';
 }
 
 function trackerHttpError(status: number, body: unknown): TrackerError {
   const fields = isRecord(body) ? body : {};
   const rawCode = fields.error;
   let code: TrackerErrorCode;
-  if (status === 404) code = 'not_found';
-  else if (isErrorCode(rawCode)) code = rawCode;
+  if (isErrorCode(rawCode)) code = rawCode;
+  else if (status === 404) code = 'not_found';
   else if (status === 403) code = 'forbidden';
   else if (status === 409) code = 'conflict';
   else if (status === 429) code = 'rate_limited';
@@ -252,6 +262,10 @@ export function createHttpTrackerApi(fetchFn: typeof fetch = fetch): TrackerApi 
         ['group', query.group ?? undefined], ['facets', query.includeFacets ? 1 : undefined],
       ])}`, undefined, options);
     },
+    listLinks: (boardId, options) => request('GET', `/api/tracker/links${queryString([['boardId', boardId]])}`, undefined, options),
+    suggestLinkMapping: (boardId, kanbanId, options) => request('GET', `/api/tracker/links/suggest${queryString([['boardId', boardId], ['kanbanId', kanbanId]])}`, undefined, options),
+    linkKanban: (input, options) => request('POST', '/api/tracker/links', input, options),
+    unlinkKanban: (id, options) => request('DELETE', `/api/tracker/links/${segment(id)}`, undefined, options),
     ticketsUpdatedSince: (seq, options) => request('GET', `/api/tracker/tickets${queryString([['updatedSince', seq]])}`, undefined, options),
     createTicket: (input, options) => request('POST', '/api/tracker/tickets', input, options),
     getTicket: async (key, options) => {
@@ -529,6 +543,10 @@ export interface TrackerStore {
   subscribe(listener: (snapshot: TrackerStoreSnapshot) => void): () => void;
   snapshot(): TrackerStoreSnapshot;
   loadMeta(force?: boolean): Promise<TrackerMeta>;
+  listLinks(boardId: string, options?: TrackerLinkOptions): Promise<TrackerKanbanLink[]>;
+  suggestLinkMapping(boardId: string, kanbanId: string, options?: TrackerLinkOptions): Promise<TrackerLinkSuggestion>;
+  linkKanban(input: TrackerLinkKanbanInput): Promise<TrackerLinkKanbanResult>;
+  unlinkKanban(id: string): Promise<{ ok: true; unlinked: number }>;
   createLabel(name: string): Promise<TrackerLabel>;
   listProjects(options?: TrackerProjectListOptions): Promise<TrackerProject[]>;
   createProject(input: TrackerProjectInput): Promise<TrackerProject>;
@@ -588,6 +606,8 @@ function emptyTicketCache(): TrackerTicketCache {
 function emptyListCache(query: TrackerListQuery, key: string): TrackerListCache {
   return { query: cloneTrackerData(query), key, tickets: [], nextCursor: null, loading: false, loadingMore: false };
 }
+interface TrackerLinksCacheEntry { links: TrackerKanbanLink[]; fetchedAt: number; pending?: Promise<TrackerKanbanLink[]> }
+interface TrackerSuggestionCacheEntry { suggestion: TrackerLinkSuggestion; fetchedAt: number; pending?: Promise<TrackerLinkSuggestion> }
 function makeLocalId(prefix: string): string {
   const random = globalThis.crypto?.randomUUID?.().replaceAll('-', '');
   return `${prefix}-${random ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`}`;
@@ -660,6 +680,8 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
   const ticketLoadPromises = new Map<string, Promise<TrackerTicketDetail>>();
   const listCaches = new Map<string, TrackerListCache>();
   const loadedLists = new Set<string>();
+  const linksCaches = new Map<string, TrackerLinksCacheEntry>();
+  const linkSuggestionCaches = new Map<string, TrackerSuggestionCacheEntry>();
   const watchQueries = new Map<string, TrackerListQuery>();
   const offlineQueue = new Map<string, QueuedEdit[]>();
   const blockedQueue = new Set<string>();
@@ -673,6 +695,8 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
   let pollErrors = 0;
   let destroyed = false;
   let replaying = false;
+  const linkCacheTtlMs = 30_000;
+  const maxLinkCacheBoards = 8;
 
   function snapshot(): TrackerStoreSnapshot {
     const tickets: Record<string, TrackerTicketCache> = {};
@@ -766,7 +790,10 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
   }
 
   function setReadonlyFrom(error: TrackerError): void {
-    if (error.code === 'read_only') readOnly = true;
+    if (error.code === 'read_only' && !readOnly) {
+      readOnly = true;
+      notify();
+    }
   }
 
   function conflictActorFromDetail(detail: TrackerTicketDetail): TrackerConflictActor | undefined {
@@ -801,7 +828,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
 
   function assertWritable(): void {
     if (readOnly || meta?.me.canWrite === false) {
-      readOnly = true;
+      if (!readOnly) { readOnly = true; notify(); }
       throw new TrackerError('read_only', 'You do not have permission to change tracker tickets.');
     }
   }
@@ -878,6 +905,120 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       setReadonlyFrom(metaError);
       notify();
       throw metaError;
+    }
+  }
+
+  function rememberLinks(boardId: string, entry: TrackerLinksCacheEntry): void {
+    linksCaches.delete(boardId);
+    linksCaches.set(boardId, entry);
+    while (linksCaches.size > maxLinkCacheBoards) linksCaches.delete(linksCaches.keys().next().value as string);
+  }
+
+  function linkSuggestionCacheKey(boardId: string, kanbanId: string): string {
+    return `${boardId}\u0000${kanbanId}`;
+  }
+
+  async function listLinks(boardId: string, linkOptions: TrackerLinkOptions = {}): Promise<TrackerKanbanLink[]> {
+    if (!boardId) throw new TrackerError('invalid_input', 'Board id is required.', { path: 'boardId' });
+    const cached = linksCaches.get(boardId);
+    if (!linkOptions.force && cached && now() - cached.fetchedAt < linkCacheTtlMs) {
+      rememberLinks(boardId, cached);
+      return cloneTrackerData(cached.links);
+    }
+    if (!linkOptions.force && cached?.pending) return cloneTrackerData(await cached.pending);
+    const entry: TrackerLinksCacheEntry = cached ?? { links: [], fetchedAt: 0 };
+    const request = api.listLinks(boardId, { signal: linkOptions.signal }).then((result) => {
+      entry.links = cloneTrackerData(result.links);
+      entry.fetchedAt = now();
+      entry.pending = undefined;
+      rememberLinks(boardId, entry);
+      return cloneTrackerData(entry.links);
+    }).catch((caught: unknown) => {
+      entry.pending = undefined;
+      const error = asTrackerError(caught);
+      setReadonlyFrom(error);
+      notify();
+      throw error;
+    });
+    entry.pending = request;
+    rememberLinks(boardId, entry);
+    return cloneTrackerData(await request);
+  }
+
+  async function suggestLinkMapping(boardId: string, kanbanId: string, linkOptions: TrackerLinkOptions = {}): Promise<TrackerLinkSuggestion> {
+    if (!boardId || !kanbanId) throw new TrackerError('invalid_input', 'Board and kanban ids are required.');
+    const key = linkSuggestionCacheKey(boardId, kanbanId);
+    const cached = linkSuggestionCaches.get(key);
+    if (!linkOptions.force && cached && now() - cached.fetchedAt < linkCacheTtlMs) return cloneTrackerData(cached.suggestion);
+    if (!linkOptions.force && cached?.pending) return cloneTrackerData(await cached.pending);
+    const entry: TrackerSuggestionCacheEntry = cached ?? { suggestion: { map: {}, unmappedLanes: [], existingCardCount: 0 }, fetchedAt: 0 };
+    const request = api.suggestLinkMapping(boardId, kanbanId, { signal: linkOptions.signal }).then((result) => {
+      entry.suggestion = cloneTrackerData(result.suggestion);
+      entry.fetchedAt = now();
+      entry.pending = undefined;
+      return cloneTrackerData(entry.suggestion);
+    }).catch((caught: unknown) => {
+      entry.pending = undefined;
+      const error = asTrackerError(caught);
+      setReadonlyFrom(error);
+      notify();
+      throw error;
+    });
+    entry.pending = request;
+    linkSuggestionCaches.set(key, entry);
+    while (linkSuggestionCaches.size > 100) linkSuggestionCaches.delete(linkSuggestionCaches.keys().next().value as string);
+    return cloneTrackerData(await request);
+  }
+
+  async function linkKanban(input: TrackerLinkKanbanInput): Promise<TrackerLinkKanbanResult> {
+    if (!isOnline()) throw new TrackerError('offline', 'Kanbans can only be linked while online.');
+    if (!meta) await loadMeta();
+    assertWritable();
+    try {
+      const result = await api.linkKanban(cloneTrackerData(input));
+      const cached = linksCaches.get(input.boardId);
+      if (cached) {
+        cached.links = [...cached.links.filter((item) => item.id !== result.link.id && item.kanbanId !== input.kanbanId), cloneTrackerData(result.link)];
+        cached.fetchedAt = now();
+        rememberLinks(input.boardId, cached);
+      }
+      linkSuggestionCaches.delete(linkSuggestionCacheKey(input.boardId, input.kanbanId));
+      for (const key of listCaches.keys()) if (!watchQueries.has(key)) loadedLists.delete(key);
+      for (const [key, query] of watchQueries) if (listListeners.has(key)) void loadList(query, { force: true }).catch(() => undefined);
+      await Promise.all(result.created.map(({ key }) => loadTicket(key, true).catch(() => undefined)));
+      notify();
+      return cloneTrackerData(result);
+    } catch (caught) {
+      const error = asTrackerError(caught);
+      setReadonlyFrom(error);
+      notify();
+      throw error;
+    }
+  }
+
+  async function unlinkKanban(id: string): Promise<{ ok: true; unlinked: number }> {
+    if (!isOnline()) throw new TrackerError('offline', 'Kanbans can only be unlinked while online.');
+    if (!meta) await loadMeta();
+    assertWritable();
+    try {
+      const result = await api.unlinkKanban(id);
+      let found = false;
+      for (const [boardId, cached] of linksCaches) {
+        if (!cached.links.some((item) => item.id === id)) continue;
+        found = true;
+        cached.links = cached.links.filter((item) => item.id !== id);
+        cached.fetchedAt = now();
+        rememberLinks(boardId, cached);
+      }
+      if (!found) linksCaches.clear();
+      for (const [key, state] of ticketCaches) if (state.detail) void loadTicket(key, true).catch(() => undefined);
+      notify();
+      return cloneTrackerData(result);
+    } catch (caught) {
+      const error = asTrackerError(caught);
+      setReadonlyFrom(error);
+      notify();
+      throw error;
     }
   }
 
@@ -1845,6 +1986,10 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
     subscribe(listener) { generalListeners.add(listener); return () => generalListeners.delete(listener); },
     snapshot,
     loadMeta,
+    listLinks,
+    suggestLinkMapping,
+    linkKanban,
+    unlinkKanban,
     createLabel,
     listProjects,
     createProject,
@@ -1883,7 +2028,7 @@ export function createTrackerStore(api: TrackerApi, options: TrackerStoreOptions
       stopPoll();
       if (typeof window !== 'undefined') window.removeEventListener('online', onlineListener);
       generalListeners.clear(); ticketListeners.clear(); listListeners.clear(); watchQueries.clear();
-      offlineQueue.clear(); blockedQueue.clear();
+      offlineQueue.clear(); blockedQueue.clear(); linksCaches.clear(); linkSuggestionCaches.clear();
     },
   };
 }

@@ -50,7 +50,7 @@ function errorMessage(error: unknown): string {
     if (error.status === 404 || error.code === 'invalid_join_code') return INVALID;
     if (error.status === 429) return 'Too many attempts. Wait a minute and try again.';
     if (error.status === 0 || error.code === 'network') return NETWORK;
-    if (error.code === 'bad_request') return 'Enter a display name of 1 to 40 characters.';
+    if (error.code === 'bad_request') return 'Use 1 to 40 characters';
   }
   return 'Could not join this board. Try again.';
 }
@@ -127,13 +127,13 @@ export function renderJoin(root: HTMLElement, initialCode: string, done: (guest:
       return;
     }
     if ([...cleanedName].length > 40) {
-      showInlineError('name', 'Enter a display name of 1 to 40 characters.');
+      showInlineError('name', 'Use 1 to 40 characters');
       return;
     }
     submit.disabled = true;
     submit.textContent = 'Joining…';
     try {
-      const joined = await api.joinWithCode(cleanCode(code.value), name.value);
+      const joined = await api.joinWithCode(cleanCode(code.value), cleanedName);
       setGuest(joined);
       done(joined);
     } catch (err) {

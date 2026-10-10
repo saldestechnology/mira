@@ -7,10 +7,12 @@ import type { BaseObj, Point } from '../types';
 import { newId } from '../store';
 import { assetCache } from '../board-images';
 import {
-  MAX_FILES_PER_ACTION, MAX_FILE_BYTES, PENDING_PREFIX, detectKind, layoutBounds, layoutRow, pickEncoding, placedSize, planEncoding,
-  pngHasAlpha, readImageInfo, refusalMessage, scaleDown, sha256Hex, sizeOk, svgSize, type FileKind, type Refusal, type StoredType,
+  HOSTED_UPLOAD_LIMIT_BYTES, HOSTED_UPLOAD_TARGET_BYTES, MAX_FILES_PER_ACTION, MAX_FILE_BYTES, PENDING_PREFIX, detectKind,
+  layoutBounds, layoutRow, pickEncoding, placedSize, planEncoding, pngHasAlpha, readImageInfo, refusalMessage, scaleDown,
+  sha256Hex, shrinkLadder, sizeOk, svgSize, type FileKind, type Refusal, type StoredType,
 } from '../images';
 import { MAX_STORED_SIDE } from '../images';
+import { IMAGE_UPLOAD_MESSAGES } from '../image-messages';
 import { toast } from './common';
 
 /** Raw files over this are refused before they are read: the browser has to hold the decoded pixels too. */
@@ -34,6 +36,8 @@ class Refused extends Error {
 }
 
 type Surface = { ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D; encode: (type: string, quality?: number) => Promise<Blob | null>; canvas: HTMLCanvasElement | OffscreenCanvas };
+
+interface EncodedImage { blob: Blob; mime: StoredType; width: number; height: number }
 
 function surface(width: number, height: number): Surface {
   if (typeof OffscreenCanvas !== 'undefined') {
@@ -68,7 +72,40 @@ function drawScaled(source: ImageBitmap | HTMLImageElement, sw: number, sh: numb
   return out;
 }
 
-async function rasterise(file: Blob, kind: FileKind, head: Uint8Array): Promise<Prepared> {
+async function shrinkHosted(source: ImageBitmap | HTMLImageElement, input: {
+  hostedWorkspace: boolean;
+  type: StoredType;
+  hasAlpha: boolean;
+  sourceWidth: number;
+  sourceHeight: number;
+  plannedWidth: number;
+  plannedHeight: number;
+  image: EncodedImage;
+}): Promise<EncodedImage> {
+  let best = input.image;
+  if (!input.hostedWorkspace || best.blob.size <= HOSTED_UPLOAD_TARGET_BYTES) return best;
+  const ladder = shrinkLadder({
+    type: input.type,
+    hasAlpha: input.hasAlpha,
+    width: input.plannedWidth,
+    height: input.plannedHeight,
+    bytes: best.blob.size,
+    target: HOSTED_UPLOAD_TARGET_BYTES,
+  });
+  for (const step of ladder) {
+    const s = drawScaled(source, input.sourceWidth, input.sourceHeight, step.width, step.height);
+    const blob = await s.encode(step.type, step.quality);
+    if (!blob || blob.type !== step.type) continue;
+    if (blob.size < best.blob.size) best = { blob, mime: step.type, width: step.width, height: step.height };
+    if (blob.size <= HOSTED_UPLOAD_TARGET_BYTES) {
+      best = { blob, mime: step.type, width: step.width, height: step.height };
+      break;
+    }
+  }
+  return best;
+}
+
+async function rasterise(file: Blob, kind: FileKind, head: Uint8Array, hostedWorkspace: boolean): Promise<Prepared> {
   const type = kind as StoredType;
   const info = readImageInfo(head, type);
   if (!info) throw new Refused('unreadable');
@@ -98,9 +135,19 @@ async function rasterise(file: Blob, kind: FileKind, head: Uint8Array): Promise<
     }
     const pick = pickEncoding({ type, bytes: file.size, scaled: plan.scaled }, results);
     const chosen = results.find((r) => r.type === pick);
-    if (chosen) return finish(chosen.blob, chosen.type as StoredType, plan.width, plan.height);
-    // the original, with the server's own metadata strip
-    return finish(file, type, bitmap.width, bitmap.height);
+    const encoded = await shrinkHosted(bitmap, {
+      hostedWorkspace,
+      type,
+      hasAlpha,
+      sourceWidth: bitmap.width,
+      sourceHeight: bitmap.height,
+      plannedWidth: plan.width,
+      plannedHeight: plan.height,
+      image: chosen
+        ? { blob: chosen.blob, mime: chosen.type as StoredType, width: plan.width, height: plan.height }
+        : { blob: file, mime: type, width: bitmap.width, height: bitmap.height },
+    });
+    return finish(encoded.blob, encoded.mime, encoded.width, encoded.height);
   } finally {
     bitmap.close();
   }
@@ -113,7 +160,7 @@ async function finish(blob: Blob, mime: StoredType, width: number, height: numbe
 }
 
 /** SVG is not stored (docs/images.md, Decided): it is drawn once on a canvas and kept as a PNG. */
-async function rasteriseSvg(file: Blob): Promise<Prepared> {
+async function rasteriseSvg(file: Blob, hostedWorkspace: boolean): Promise<Prepared> {
   const text = await file.text();
   const natural = svgSize(text);
   const { width, height } = scaleDown(natural.width, natural.height);
@@ -133,20 +180,30 @@ async function rasteriseSvg(file: Blob): Promise<Prepared> {
     s.ctx.drawImage(img, 0, 0, width, height);
     const blob = await s.encode('image/png');
     if (!blob) throw new Refused('unreadable');
-    return finish(blob, 'image/png', width, height);
+    const encoded = await shrinkHosted(img, {
+      hostedWorkspace,
+      type: 'image/png',
+      hasAlpha: true,
+      sourceWidth: width,
+      sourceHeight: height,
+      plannedWidth: width,
+      plannedHeight: height,
+      image: { blob, mime: 'image/png', width, height },
+    });
+    return finish(encoded.blob, encoded.mime, encoded.width, encoded.height);
   } finally {
     URL.revokeObjectURL(url);
   }
 }
 
-async function prepare(file: File | Blob): Promise<Prepared> {
+async function prepare(file: File | Blob, hostedWorkspace: boolean): Promise<Prepared> {
   if (file.size === 0) throw new Refused('empty');
   if (file.size > MAX_RAW_BYTES) throw new Refused('too_large');
   const head = new Uint8Array(await file.slice(0, HEAD_BYTES).arrayBuffer());
   const kind = detectKind(head);
   if (!kind) throw new Refused('unsupported');
-  if (kind === 'image/svg+xml') return rasteriseSvg(file);
-  return rasterise(file, kind, head);
+  if (kind === 'image/svg+xml') return rasteriseSvg(file, hostedWorkspace);
+  return rasterise(file, kind, head, hostedWorkspace);
 }
 
 const nameOf = (f: File | Blob, i: number) => ('name' in f && f.name ? f.name : `Pasted image ${i + 1}`);
@@ -166,18 +223,20 @@ export async function addImages(app: BoardApp, files: (File | Blob)[], at?: Poin
   const prepared: { id: string; key: string; p: Prepared; size: { w: number; h: number } }[] = [];
   for (const [i, file] of list.entries()) {
     try {
-      const p = await prepare(file);
+      const p = await prepare(file, app.hostedWorkspace);
       prepared.push({ id: newId(), key: `${PENDING_PREFIX}${newId()}`, p, size: placedSize(p.width, p.height, view) });
     } catch (err) {
       toast(refusalMessage({ name: nameOf(file, i), reason: err instanceof Refused ? err.reason : 'unreadable' }), 6000);
     }
   }
   if (!prepared.length) return 0;
+  const overLimit = app.hostedWorkspace ? prepared.filter(({ p }) => p.blob.size > HOSTED_UPLOAD_LIMIT_BYTES).length : 0;
+  if (overLimit) toast(IMAGE_UPLOAD_MESSAGES.actionOverLimit(overLimit), 8000);
 
   const boardId = app.conn.id;
   for (const { id, key, p } of prepared) {
     await assetCache.put({ key, blob: p.blob, mime: p.mime, width: p.width, height: p.height, boardId, pending: true });
-    await app.images.queue.enqueue({ id: key, boardId, objectId: id, hash: p.hash });
+    await app.images.queue.enqueue({ id: key, boardId, objectId: id, hash: p.hash, bytes: p.blob.size });
   }
 
   const sizes = prepared.map((x) => x.size);
@@ -209,4 +268,3 @@ export function pickImages(app: BoardApp): void {
   });
   input.click();
 }
-

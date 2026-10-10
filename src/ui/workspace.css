@@ -4,6 +4,14 @@
   background: var(--signal); color: var(--on-signal); font-size: 13px; font-weight: 600; line-height: 1.35;
 }
 .workspace-banner[hidden] { display: none; }
+.workspace-banner-signin {
+  color: inherit; margin-inline-start: 0.5em; font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 2px;
+}
+@media (max-width: 479px) {
+  .workspace-banner-signin {
+    box-sizing: border-box; display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; padding-inline: 8px;
+  }
+}
 
 /* On a board it is a fixed bar that wraps at large text sizes, and the editing chrome moves down by its height (--banner-h, set in main.ts). */
 .board-root > .workspace-banner {

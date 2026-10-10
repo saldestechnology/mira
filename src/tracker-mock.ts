@@ -9,6 +9,10 @@ import {
   type TrackerFeed,
   type TrackerFeedEvent,
   type TrackerInboxItem,
+  type TrackerKanbanLink,
+  type TrackerLinkKanbanInput,
+  type TrackerLinkKanbanResult,
+  type TrackerLinkSuggestion,
   type TrackerListQuery,
   type TrackerMeta,
   type TrackerNotificationKind,
@@ -39,6 +43,18 @@ export interface TrackerMockSeed {
   inbox?: TrackerInboxItem[];
   now?: () => number;
   notificationPrefs?: TrackerNotificationPrefs;
+  kanbans?: TrackerMockKanban[];
+  forbiddenBoards?: string[];
+}
+
+export interface TrackerMockKanban {
+  boardId: string;
+  kanbanId: string;
+  lanes: Array<{ id: string; name: string; stage?: 'todo' | 'doing' | 'done' }>;
+  cards: Array<{
+    id: string; laneId: string; title: string; description?: string; ownerId?: string; ownerName?: string;
+    due?: string; labels?: string[];
+  }>;
 }
 
 const DEFAULT_STATES: TrackerState[] = [
@@ -134,6 +150,9 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
     ...copy(view), filter: [], ownerUserId: view.mine ? meta.me.userId : undefined,
     owner: view.mine ? { userId: meta.me.userId, name: meta.members.find((member) => member.userId === meta.me.userId)?.name ?? 'You' } : undefined,
   }]));
+  const kanbans = new Map((seed.kanbans ?? []).map((kanban) => [`${kanban.boardId}\u0000${kanban.kanbanId}`, copy(kanban)]));
+  const forbiddenBoards = new Set(seed.forbiddenBoards ?? []);
+  const links = new Map<string, { link: TrackerKanbanLink; cardIds: string[] }>();
   const actor = () => ({ userId: meta.me.userId, name: meta.members.find((member) => member.userId === meta.me.userId)?.name ?? 'You' });
   const newId = (kind: string) => `${kind}-${(++serial).toString(36)}`;
   const ensureWritable = () => {
@@ -151,6 +170,16 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
     return state;
   };
   const stateValue = (state: TrackerState): TrackerTicket['state'] => ({ id: state.id, key: state.key, name: state.name, category: state.category });
+  const boardKanbanKey = (boardId: string, kanbanId: string) => `${boardId}\u0000${kanbanId}`;
+  const assertBoardAllowed = (boardId: string) => {
+    if (forbiddenBoards.has(boardId)) throw new TrackerError('board_forbidden', 'You cannot link kanbans on this board.', { status: 403 });
+  };
+  const findKanban = (boardId: string, kanbanId: string): TrackerMockKanban => {
+    assertBoardAllowed(boardId);
+    const kanban = kanbans.get(boardKanbanKey(boardId, kanbanId));
+    if (!kanban) throw new TrackerError('kanban_not_found', 'The kanban no longer exists.', { status: 404 });
+    return kanban;
+  };
 
   function syncResourceMeta(): void {
     meta.projects = [...projects.values()].filter((project) => project.archivedAt == null).map(copy);
@@ -193,6 +222,24 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
     ticket.updatedAt = event.at;
     ticket.updatedSeq = seq;
     return event;
+  }
+
+  function createTicketFromCard(card: TrackerMockKanban['cards'][number], state: TrackerState): TrackerTicket {
+    const title = card.title.trim() || 'Untitled card';
+    const owner = card.ownerId ? meta.members.find((member) => member.userId === card.ownerId)
+      : card.ownerName ? meta.members.find((member) => member.name.toLocaleLowerCase() === card.ownerName!.toLocaleLowerCase()) : undefined;
+    const assignee = owner ? { userId: owner.userId, name: owner.name } : null;
+    const ticket: TrackerTicket = {
+      id: newId('ticket'), key: `${meta.prefix}-${nextNumber++}`, trackerId: meta.trackerId,
+      title, description: card.description ?? '', state: stateValue(state), priority: 'none', assignee,
+      creator: { type: 'user', id: meta.me.userId, name: actor().name }, labels: labelValues(card.labels),
+      project: null, milestone: null, estimate: null, due: card.due ?? null, parent: null,
+      relations: [], links: [], aliases: [], archivedAt: null, createdAt: now(), updatedAt: now(), updatedSeq: 0,
+    };
+    tickets.set(ticket.key.toLocaleUpperCase(), ticket);
+    addEvent(ticket, 'ticket.created');
+    subscriptions.add(ticket.key.toLocaleUpperCase());
+    return ticket;
   }
 
   function labelValues(values: string[] | undefined): TrackerTicket['labels'] {
@@ -552,6 +599,94 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       const page = all.slice(offset, offset + limit).map(copy);
       const facets = query.includeFacets ? makeFacets(all) : undefined;
       return { tickets: page, nextCursor: offset + limit < all.length ? String(offset + limit) : null, ...(facets ? { facets } : {}) };
+    },
+    async listLinks(boardId) {
+      assertBoardAllowed(boardId);
+      return { links: copy([...links.values()].filter(({ link }) => link.boardId === boardId).map(({ link }) => link)) };
+    },
+    async suggestLinkMapping(boardId, kanbanId) {
+      const kanban = findKanban(boardId, kanbanId);
+      const categoryForStage = { todo: 'unstarted', doing: 'started', done: 'completed' } as const;
+      const normalName = (value: string) => value.toLocaleLowerCase().replace(/[^a-z0-9]/g, '');
+      const used = new Set<string>();
+      const map: TrackerLinkSuggestion['map'] = {};
+      const unmappedLanes: string[] = [];
+      for (const lane of kanban.lanes) {
+        const category = lane.stage ? categoryForStage[lane.stage] : undefined;
+        const candidates = meta.states.filter((state) => !category || state.category === category);
+        const state = candidates.find((candidate) => !used.has(candidate.key) && normalName(candidate.name) === normalName(lane.name))
+          ?? (category ? candidates.find((candidate) => !used.has(candidate.key)) : undefined);
+        if (state) {
+          map[lane.id] = state.key;
+          used.add(state.key);
+        } else {
+          map[lane.id] = null;
+          unmappedLanes.push(lane.id);
+        }
+      }
+      return { suggestion: { map, unmappedLanes, existingCardCount: kanban.cards.length } };
+    },
+    async linkKanban(input: TrackerLinkKanbanInput): Promise<TrackerLinkKanbanResult> {
+      ensureWritable();
+      const kanban = findKanban(input.boardId, input.kanbanId);
+      if ([...links.values()].some(({ link }) => link.boardId === input.boardId && link.kanbanId === input.kanbanId)) {
+        throw new TrackerError('already_linked', 'This kanban is already linked to a tracker.', { status: 409 });
+      }
+      const stateByLane = new Map<string, TrackerState>();
+      const usedStates = new Set<string>();
+      const laneIds = new Set(kanban.lanes.map((lane) => lane.id));
+      for (const [laneId, stateKey] of Object.entries(input.map)) {
+        if (!laneIds.has(laneId)) throw new TrackerError('invalid_mapping', 'The lane no longer exists.', { path: laneId, status: 400 });
+        if (typeof stateKey !== 'string') throw new TrackerError('invalid_mapping', 'Choose a tracker state for this lane.', { path: laneId, status: 400 });
+        const state = meta.states.find((candidate) => candidate.key.toLocaleLowerCase() === stateKey.toLocaleLowerCase());
+        if (!state) throw new TrackerError('invalid_mapping', `Unknown tracker state: ${stateKey}.`, { path: laneId, status: 400 });
+        if (usedStates.has(state.key)) throw new TrackerError('invalid_mapping', 'A tracker state can be used by only one lane.', { path: laneId, status: 400 });
+        stateByLane.set(laneId, state);
+        usedStates.add(state.key);
+      }
+      if (input.createTickets) {
+        for (const card of kanban.cards) {
+          if (!stateByLane.has(card.laneId)) continue;
+          const title = card.title.trim() || 'Untitled card';
+          if (Array.from(title).length > 200) throw new TrackerError('invalid_input', 'Title must be one line with 1 to 200 code points.', { path: card.id });
+          if (card.due !== undefined && !isValidDate(card.due)) throw new TrackerError('invalid_input', 'Due must be a valid YYYY-MM-DD date.', { path: card.id });
+          labelValues(card.labels);
+        }
+      }
+      const created: TrackerLinkKanbanResult['created'] = [];
+      const skipped: TrackerLinkKanbanResult['skipped'] = [];
+      const linkedCardIds: string[] = [];
+      for (const card of kanban.cards) {
+        const state = stateByLane.get(card.laneId);
+        if (!input.createTickets) {
+          skipped.push({ cardId: card.id, reason: 'ticket_creation_disabled' });
+        } else if (!state) {
+          skipped.push({ cardId: card.id, reason: 'unmapped_lane' });
+        } else {
+          const ticket = createTicketFromCard(card, state);
+          ticket.links.push({ id: newId('card-link'), kind: 'card', boardId: input.boardId, kanbanId: input.kanbanId, cardId: card.id, at: new Date(now()).toISOString() });
+          created.push({ cardId: card.id, key: ticket.key });
+          linkedCardIds.push(card.id);
+        }
+      }
+      const link: TrackerKanbanLink = {
+        id: newId('kanban-link'), boardId: input.boardId, kanbanId: input.kanbanId, trackerId: meta.trackerId,
+        map: Object.fromEntries([...stateByLane].map(([laneId, state]) => [laneId, state.key])),
+        createdAt: now(), ticketCount: created.length,
+      };
+      links.set(link.id, { link, cardIds: linkedCardIds });
+      return { link: copy(link), created: copy(created), skipped: copy(skipped) };
+    },
+    async unlinkKanban(id) {
+      ensureWritable();
+      const record = links.get(id);
+      if (!record) throw new TrackerError('not_found', 'This kanban link no longer exists.', { status: 404 });
+      assertBoardAllowed(record.link.boardId);
+      links.delete(id);
+      for (const ticket of tickets.values()) {
+        ticket.links = ticket.links.filter((item) => item.kind !== 'card' || item.boardId !== record.link.boardId || item.kanbanId !== record.link.kanbanId);
+      }
+      return { ok: true, unlinked: record.cardIds.length };
     },
     async ticketsUpdatedSince(since) {
       return { tickets: [...tickets.values()].filter((ticket) => ticket.updatedSeq > since).map(copy), seq };

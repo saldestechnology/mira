@@ -690,7 +690,8 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     if (current.due && current.due < today && current.assignee?.userId === opts.me.userId && current.state.category !== 'completed' && current.state.category !== 'canceled') {
       idButton.classList.add('tk-header-key--overdue');
     }
-    idButton.append(keyChip(current.key));
+    idButton.replaceChildren(keyChip(current.key), h('span', { class: 'tk-copy-glyph', 'aria-hidden': 'true' }, '⧉'));
+    idButton.setAttribute('data-tip', 'Copy link');
     header.append(idButton);
     const stateButton = fieldButton(current.state.name, 'state', (event) => { void openFieldPicker('state', event.currentTarget as HTMLElement); }, 'ticket-state');
     stateButton.prepend(stateGlyph(current.state.category, current.state.key));
@@ -706,6 +707,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     const tools = h('div', { class: 'tk-header-tools' });
     const moreButton = button('More ticket actions', 'tk-icon-button', false, () => { menuOpen = !menuOpen; render(); }, 'ticket-menu');
     moreButton.textContent = '⋯';
+    moreButton.setAttribute('data-tip', 'More actions');
     moreButton.setAttribute('aria-expanded', String(menuOpen));
     tools.append(moreButton);
     if (menuOpen) {
@@ -716,7 +718,10 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       else menu.append(describeDisabled(button('Restore', 'tk-menu-item', !canRestore(), () => archive(false)), !canRestore(), permissionReason()));
       header.appendChild(menu);
     }
-    tools.append(button('Close ticket', 'tk-icon-button', false, () => opts.onClose(), 'ticket-close'));
+    const closeButton = button('Close ticket', 'tk-icon-button', false, () => opts.onClose(), 'ticket-close');
+    closeButton.textContent = '×';
+    closeButton.setAttribute('data-tip', 'Close ticket');
+    tools.append(closeButton);
     header.appendChild(tools);
     root.appendChild(header);
 

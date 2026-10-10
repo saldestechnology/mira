@@ -6,7 +6,37 @@ export type TrackerView = 'inbox' | 'my' | 'all' | 'board' | 'projects';
 export type TrackerRelationKind = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicates' | 'duplicated_by';
 export type TrackerErrorCode =
   | 'invalid_input' | 'invalid_filter' | 'not_found' | 'forbidden' | 'conflict' | 'read_only'
-  | 'limit_exceeded' | 'rate_limited' | 'internal' | 'offline' | 'network';
+  | 'limit_exceeded' | 'rate_limited' | 'internal' | 'offline' | 'network'
+  | 'invalid_mapping' | 'already_linked' | 'kanban_not_found' | 'board_forbidden';
+
+export interface TrackerKanbanLink {
+  id: string;
+  boardId: string;
+  kanbanId: string;
+  trackerId: string;
+  map: Record<string, string>;
+  createdAt: number;
+  ticketCount: number;
+}
+
+export interface TrackerLinkSuggestion {
+  map: Record<string, string | null>;
+  unmappedLanes: string[];
+  existingCardCount: number;
+}
+
+export interface TrackerLinkKanbanInput {
+  boardId: string;
+  kanbanId: string;
+  map: Record<string, string>;
+  createTickets: boolean;
+}
+
+export interface TrackerLinkKanbanResult {
+  link: TrackerKanbanLink;
+  created: Array<{ cardId: string; key: string }>;
+  skipped: Array<{ cardId: string; reason: string }>;
+}
 
 export interface TrackerState {
   id: string;

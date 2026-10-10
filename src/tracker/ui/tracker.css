@@ -17,7 +17,7 @@
 .trk :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 .trk .trk-key-chip, .trk .trk-label-chip, .trk .trk-count-badge, .trk .trk-avatar,
 .trk .trk-actor-badge, .trk .trk-due-chip, .trk .trk-picker, .trk .trk-command-box,
-.trk .trk-filter-value, .trk .trk-filter-field, .trk .trk-search-input, .trk .trk-list-row {
+.trk .trk-filter-input, .trk .trk-list-row {
   border-radius: var(--radius-sm, 8px);
 }
 .trk .trk-key-chip { display: inline-flex; align-items: baseline; gap: 0; white-space: nowrap; font-weight: 700; }
@@ -53,12 +53,12 @@
   border: 1px solid var(--tray-line); background: var(--trk-ground); color: var(--trk-text);
   border-radius: var(--radius-md, 12px);
 }
-.trk .trk-picker-search, .trk .trk-search-input, .trk .trk-command-input, .trk .trk-filter-field, .trk .trk-filter-value {
+.trk .trk-picker-search, .trk .trk-command-input, .trk .trk-filter-input {
   width: 100%; min-width: 0; min-height: 36px; padding: 6px 9px; border: 1px solid var(--graphite);
   border-radius: var(--radius-xs, 4px); background: var(--trk-ground); color: var(--trk-text);
 }
 .trk .trk-picker-search:focus-visible, .trk .trk-command-input:focus-visible,
-.trk .trk-filter-field:focus-visible, .trk .trk-filter-value:focus-visible, .trk .trk-search-input:focus-visible {
+.trk .trk-filter-input:focus-visible {
   outline: 2px solid var(--signal); outline-offset: 2px;
 }
 .trk .trk-picker-list, .trk .trk-command-results { min-height: 0; margin: 0; padding: 4px; overflow-y: auto; list-style: none; }
@@ -74,12 +74,17 @@
 .trk .trk-picker-empty, .trk .trk-command-empty { padding: 8px; color: var(--trk-muted); }
 .trk .trk-filter-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .trk .trk-filter-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 3px 7px; border: 1px solid var(--graphite); border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-text); }
+.trk .trk-filter-chip.is-locked { border-style: dashed; }
 .trk .trk-filter-chip button { display: inline-grid; width: 24px; height: 24px; padding: 0; place-items: center; border: 0; border-radius: var(--radius-xs, 4px); background: transparent; color: var(--trk-text); }
-.trk .trk-filter-editor { display: flex; align-items: center; gap: 6px; flex: 1 1 250px; min-width: 0; }
-.trk .trk-filter-editor[hidden] { display: none; }
-.trk .trk-search-input { flex: 1 1 160px; }
-.trk .trk-filter-field, .trk .trk-filter-value { flex: 1 1 110px; }
-.trk .trk-filter-search-wrap { display: flex; flex: 1 1 180px; min-width: 0; }
+.trk .trk-filter-chips { display: flex; min-width: 0; flex-wrap: wrap; gap: 5px; }
+.trk .trk-filter-input-wrap { position: relative; display: flex; flex: 1 1 220px; min-width: min(180px, 100%); }
+.trk .trk-filter-input { width: 100%; min-height: 34px; border-color: transparent; background: transparent; }
+.trk .trk-filter-input-wrap:focus-within { border-radius: var(--radius-xs, 4px); box-shadow: 0 0 0 1px var(--signal); }
+.trk .trk-filter-suggestions { position: absolute; z-index: 100; top: calc(100% + 5px); left: 0; display: grid; width: min(360px, calc(100vw - 24px)); max-height: min(320px, 55vh); gap: 2px; overflow: auto; padding: 5px; border: 1px solid var(--tray-line); border-radius: var(--radius-md, 12px); background: var(--trk-ground); box-shadow: 0 8px 24px color-mix(in srgb, var(--ink) 14%, transparent); }
+.trk .trk-filter-suggestions[hidden] { display: none; }
+.trk .trk-filter-suggestion { display: flex; min-height: 36px; align-items: center; padding: 5px 9px; border-radius: var(--radius-xs, 4px); color: var(--trk-text); cursor: pointer; }
+.trk .trk-filter-suggestion.active, .trk .trk-filter-suggestion:hover { background: color-mix(in srgb, var(--signal) 10%, var(--trk-ground)); }
+.trk .trk-filter-error { flex: 1 0 100%; color: var(--danger); font-size: 12px; }
 .trk .trk-filter-button, .trk .trk-selection-toggle, .trk .trk-small-button, .trk .trk-command-item-button {
   min-height: 36px; padding: 5px 10px; border: 1px solid var(--graphite); border-radius: var(--radius-sm, 8px);
   background: transparent; color: var(--trk-text); font-weight: 600;
@@ -116,8 +121,7 @@
   .trk .trk-gallery-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (pointer: coarse), (max-width: 860px) {
-  .trk input, .trk select, .trk .trk-picker-search, .trk .trk-command-input, .trk .trk-search-input,
-  .trk .trk-filter-field, .trk .trk-filter-value { min-height: 44px; }
+  .trk input, .trk select, .trk .trk-picker-search, .trk .trk-command-input, .trk .trk-filter-input { min-height: 44px; }
   .trk button, .trk .trk-picker-option, .trk .trk-command-option, .trk .trk-list-row,
   .trk .trk-filter-chip button { min-height: 44px; }
   .trk .trk-filter-button, .trk .trk-selection-toggle, .trk .trk-small-button,
@@ -205,16 +209,17 @@
 .trk-all-issues { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; }
 .trk-list-tools { flex: none; border-bottom: 1px solid var(--rule); }
 .trk-view-bar, .trk-selection-bar { display: flex; min-height: 46px; align-items: center; gap: 8px; padding: 6px 10px; }
+.trk-my-subtabs { display: flex; min-height: 42px; align-items: stretch; gap: 2px; padding: 0 10px; border-bottom: 1px solid var(--rule); }
+.trk-my-subtab { min-height: 42px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--graphite); font-weight: 600; }
+.trk-my-subtab.active { border-bottom-color: var(--signal); color: var(--ink); }
 .trk-view-bar > * { flex: none; }
 .trk-view-name { border: 0; font-weight: 700; white-space: nowrap; }
 .trk-results-count { margin-left: auto; color: var(--graphite); font-size: 12px; white-space: nowrap; }
 .trk-selection-bar { overflow-x: auto; background: color-mix(in srgb, var(--signal) 8%, var(--paper)); }
 .trk-selection-bar strong { padding: 0 5px; white-space: nowrap; }
 .trk-filter-host { display: flex; min-height: 42px; flex-wrap: wrap; align-items: center; gap: 7px; padding: 5px 10px; border-bottom: 1px solid var(--rule); }
-.trk-filter-host .trk-filter-button { min-height: 32px; padding: 3px 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm, 8px); background: transparent; }
 .trk-filter-host .trk-filter-chips { min-width: 0; }
-.trk-filter-host .trk-filter-editor { display: flex; min-width: min(460px, 100%); gap: 8px; }
-.trk-filter-host .trk-search-input { width: min(220px, 100%); min-height: 32px; }
+.trk-filter-host .trk-filter-input { min-height: 32px; }
 .trk-filter-host .trk-filter-chip { min-height: 28px; }
 .trk-list-host { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .trk-list-grid { min-width: 0; font-size: 13px; }
@@ -252,6 +257,7 @@
 .trk-load-more { display: block; width: 100%; min-height: 40px; border: 0; border-bottom: 1px solid var(--rule); background: transparent; color: var(--ink); }
 .trk-empty-state, .trk-coming-next, .trk-ticket-stub { display: flex; flex: 1 1 auto; min-height: 180px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 10px; padding: clamp(18px, 4vw, 48px); }
 .trk-empty-state h2, .trk-coming-next h1 { margin: 0; font-size: 20px; font-weight: 650; }
+.trk-my-issues .trk-empty-state h2, .trk-projects-empty h1 { font-family: var(--heading, 'Bodoni Moda', Georgia, serif); font-size: 22px; font-weight: 800; }
 .trk-empty-state button { margin-top: 4px; }
 .trk-coming-next { align-items: center; text-align: center; }
 .trk-ticket-stub { justify-content: flex-start; padding-top: 32px; }
@@ -281,6 +287,32 @@
 .trk-shortcut-row kbd { font: 600 12px var(--ui); }
 .trk-inline-error, .trk-create-reason { color: var(--danger); font-size: 12px; }
 
+.trk-board-view { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; }
+.trk-board-viewbar { display: flex; flex: none; min-height: 44px; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--rule); }
+.trk-board-viewbar strong { font-size: 14px; font-weight: 700; }
+.trk-board-error { flex: none; padding: 8px 12px; border-bottom: 1px solid var(--danger); color: var(--danger); font-size: 12px; }
+.trk-board-state-strip { display: none; }
+.trk-board-lanes { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; align-items: flex-start; gap: 12px; overflow: auto; overscroll-behavior-x: contain; padding: 12px; }
+.trk-board-lane { display: flex; width: 280px; min-width: 280px; max-height: 100%; flex: 0 0 280px; flex-direction: column; min-height: 0; border-right: 1px solid var(--rule); }
+.trk-board-lane-header { display: flex; min-height: 42px; flex: none; align-items: center; gap: 7px; padding: 0 8px 7px 2px; border-bottom: 2px solid var(--ink); }
+.trk-board-lane-header h2 { min-width: 0; margin: 0; overflow: hidden; font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.trk-board-lane-count { color: var(--graphite); font-size: 12px; font-variant-numeric: tabular-nums; }
+.trk-board-add { display: grid; width: 32px; min-width: 32px; min-height: 32px; margin-left: auto; place-items: center; border: 1px solid var(--rule); border-radius: var(--radius-xs, 4px); background: transparent; font-size: 19px; }
+.trk-board-lane-cards { display: grid; min-height: 0; gap: 8px; overflow-y: auto; padding: 8px 8px 14px 2px; }
+.trk-board-card { display: grid; min-width: 0; gap: 7px; padding: 9px; border: 1px solid var(--rule); background: var(--paper-hi, var(--paper)); cursor: pointer; }
+.trk-board-card:hover { border-color: var(--ink); }
+.trk-board-card-top { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; }
+.trk-board-move { min-height: 30px; padding: 2px 7px; border: 1px solid var(--rule); border-radius: var(--radius-xs, 4px); background: transparent; color: var(--graphite); font-size: 11px; }
+.trk-board-card-title { display: -webkit-box; min-width: 0; max-height: 2.9em; overflow: hidden; padding: 0; border: 0; background: transparent; color: var(--ink); font-weight: 600; line-height: 1.45; text-align: left; text-overflow: ellipsis; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.trk-board-card-title:hover { text-decoration: underline; }
+.trk-board-card-meta { display: flex; min-width: 0; align-items: center; gap: 7px; color: var(--graphite); }
+.trk-board-priority { display: inline-flex; min-width: 20px; align-items: center; }
+.trk-board-card-meta .trk-avatar { width: 24px; height: 24px; font-size: 9px; }
+.trk-board-card-meta .trk-due-chip { min-height: 22px; padding: 1px 5px; font-size: 11px; }
+.trk-board-labels { display: flex; min-width: 0; flex-wrap: wrap; gap: 4px; }
+.trk-board-labels .trk-label-chip { min-height: 22px; font-size: 11px; }
+.trk-board-label-count { align-self: center; color: var(--graphite); font-size: 11px; }
+
 .trk-frame-overlay { position: absolute; z-index: 6; inset: 0; overflow: hidden; pointer-events: none; }
 .trk-frame-wrap { position: absolute; overflow: visible; pointer-events: none; }
 .trk-frame-work-host { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
@@ -295,6 +327,9 @@
 .trk-fullscreen-portal .trk-fullscreen-strip { flex: none; }
 .trk-route-root { position: fixed; z-index: 20000; inset: 0; width: 100vw; height: 100dvh; overflow: hidden; background: var(--paper-hi, var(--paper)); color: var(--ink); }
 .trk-route-root > .trk-shell { width: 100%; height: 100%; border: 0; }
+/* Global overlays are siblings of the full-screen route root, so lift them above its stacking context. */
+.trk-route-root ~ .popover { z-index: 20001; }
+.trk-route-root ~ .modal-back { z-index: 20002; }
 
 .trk-new-issue-back .modal { width: min(720px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 32px)); }
 .trk-new-issue { display: grid; gap: 14px; }
@@ -302,6 +337,10 @@
 .trk-new-description-head { display: flex; align-items: center; justify-content: space-between; color: var(--graphite); font-size: 12px; }
 .trk-new-description { width: 100%; min-height: 160px; resize: vertical; padding: 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm, 8px); background: var(--paper); }
 .trk-new-preview { min-height: 160px; padding: 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm, 8px); overflow-wrap: anywhere; }
+.trk-new-issue-back .trk-new-issue { color: var(--tray-text); }
+.trk-new-issue-back .trk-new-description-head { color: var(--tray-muted); }
+.trk-new-issue-back .trk-new-title, .trk-new-issue-back .trk-new-description { color: var(--ink); }
+.trk-new-issue-back .trk-small-button { border-color: var(--tray-line); color: var(--tray-text); }
 .trk-markdown-preview > :first-child { margin-top: 0; }
 .trk-markdown-preview > :last-child { margin-bottom: 0; }
 .trk-markdown-preview code { padding: 1px 4px; border: 1px solid var(--rule); border-radius: var(--radius-xs, 4px); }
@@ -324,8 +363,20 @@
   .trk-view-bar .trk-view-button { min-height: 44px; padding-inline: 8px; white-space: nowrap; }
   .trk-results-count { padding-inline: 4px; }
   .trk-filter-host { min-height: 44px; }
-  .trk-filter-host .trk-search-input { width: 100%; min-height: 40px; }
-  .trk-filter-host .trk-filter-editor:not([hidden]) { position: fixed; z-index: 21000; right: 0; bottom: calc(64px + env(safe-area-inset-bottom)); left: 0; display: grid; width: 100%; padding: 16px; border: 1px solid var(--rule); border-radius: var(--radius-md, 12px) var(--radius-md, 12px) 0 0; background: var(--paper-hi, var(--paper)); box-shadow: 0 -10px 32px color-mix(in srgb, var(--ink) 18%, transparent); }
+  .trk-filter-host .trk-filter-input { width: 100%; min-height: 44px; }
+  .trk .trk-filter-suggestions { position: fixed; z-index: 21000; top: auto; right: 8px; bottom: calc(64px + env(safe-area-inset-bottom)); left: 8px; width: auto; max-height: 45dvh; }
+  .trk-my-subtabs { min-height: 44px; }
+  .trk-my-subtab { min-height: 44px; }
+  .trk-board-viewbar { display: none; }
+  .trk-board-state-strip { display: flex; min-height: 56px; flex: none; gap: 4px; overflow-x: auto; padding: 5px 8px; border-bottom: 1px solid var(--rule); }
+  .trk-board-state-tab { display: flex; min-width: 58px; min-height: 44px; flex: 1 0 58px; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 2px 4px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--graphite); font-size: 10px; }
+  .trk-board-state-tab.active { border-bottom-color: var(--signal); color: var(--ink); }
+  .trk-board-state-tab .trk-board-lane-count { font-size: 10px; }
+  .trk-board-lanes { padding: 8px; }
+  .trk-board-lanes.is-phone-lane .trk-board-lane { width: 100%; min-width: 100%; max-height: none; flex-basis: 100%; }
+  .trk-board-lane-cards { padding-right: 2px; }
+  .trk-board-move { min-height: 44px; padding-inline: 9px; }
+  .trk-board-add { width: 44px; min-width: 44px; min-height: 44px; }
   .trk-list-grid { padding-bottom: 2px; }
   .trk-grid-header { display: none; }
   .trk .trk-list-row { min-height: 64px; grid-template-columns: 44px 76px minmax(0, 1fr) 48px !important; grid-template-rows: 30px 26px; grid-template-areas: 'priority key title title' 'state state state assignee'; column-gap: 5px; padding: 3px 8px; }

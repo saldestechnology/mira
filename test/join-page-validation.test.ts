@@ -75,7 +75,8 @@ describe('join page validation', () => {
     expect(code.value).toBe('ABCDEFGH');
     need(root, 'form').dispatchEvent(new FakeEvent('submit'));
     await flush();
-    expect(mocks.joinWithCode).toHaveBeenCalledWith('ABCDEFGH', '  Rae  ');
+    // the client now sends the cleaned name, and the server cleans it as well.
+    expect(mocks.joinWithCode).toHaveBeenCalledWith('ABCDEFGH', 'Rae');
   });
 
   it('sets the name limit and gives friendly feedback for cleaned empty and overlong names', async () => {
@@ -97,7 +98,7 @@ describe('join page validation', () => {
     name.value = '\u200B' + 'A'.repeat(41);
     need(root, 'form').dispatchEvent(new FakeEvent('submit'));
     await flush();
-    expect(nameError.textContent).toBe('Enter a display name of 1 to 40 characters.');
+    expect(nameError.textContent).toBe('Use 1 to 40 characters');
     expect(nameError.hidden).toBe(false);
     expect(nameError.getAttribute('role')).toBe('alert');
     expect(name.getAttribute('aria-invalid')).toBe('true');
@@ -105,18 +106,34 @@ describe('join page validation', () => {
     expect(mocks.joinWithCode).not.toHaveBeenCalled();
   });
 
-  it('allows forty cleaned NFC characters while retaining the original raw name for the API', async () => {
+  it('sends the cleaned display name to the API', async () => {
+    const guest: GuestJoin = { boardId: 'board-clean-name', role: 'commenter', name: 'Ada Lovelace', guestId: 'guest-clean-name', expiresAt: 1 };
+    mocks.joinWithCode.mockResolvedValue(guest);
+    const root = browser.mount();
+    renderJoin(root as unknown as HTMLElement, 'ABCDEF', vi.fn<(value: GuestJoin) => void>());
+    need(root, 'input[name="name"]').value = '  Ada\u200B   Lovelace  ';
+    need(root, 'form').dispatchEvent(new FakeEvent('submit'));
+    await flush();
+
+    // the client now sends the cleaned name, and the server cleans it as well.
+    expect(mocks.joinWithCode).toHaveBeenCalledWith('ABCDEF', 'Ada Lovelace');
+    expect(mocks.setGuest).toHaveBeenCalledWith(guest);
+  });
+
+  it('sends forty cleaned NFC characters to the API', async () => {
     const guest: GuestJoin = { boardId: 'board-2', role: 'commenter', name: 'Élodie', guestId: 'guest-2', expiresAt: 1 };
     mocks.joinWithCode.mockResolvedValue(guest);
     const root = browser.mount();
     renderJoin(root as unknown as HTMLElement, 'ABCDEF', vi.fn<(value: GuestJoin) => void>());
     const rawName = '\u200B' + 'e\u0301'.repeat(40);
+    const cleanedName = 'é'.repeat(40);
     need(root, 'input[name="name"]').value = rawName;
     need(root, 'form').dispatchEvent(new FakeEvent('submit'));
     await flush();
 
     expect(rawName.length).toBeGreaterThan(40);
-    expect(mocks.joinWithCode).toHaveBeenCalledWith('ABCDEF', rawName);
+    // the client now sends the cleaned name, and the server cleans it as well.
+    expect(mocks.joinWithCode).toHaveBeenCalledWith('ABCDEF', cleanedName);
     expect(mocks.setGuest).toHaveBeenCalledWith(guest);
   });
 
@@ -166,9 +183,10 @@ describe('join page validation', () => {
     need(root, 'form').dispatchEvent(new FakeEvent('submit'));
     await flush();
 
-    expect(mocks.joinWithCode).toHaveBeenCalledWith('ABCD2345', '  Alex\u0000  ');
+    // the client now sends the cleaned name, and the server cleans it as well.
+    expect(mocks.joinWithCode).toHaveBeenCalledWith('ABCD2345', 'Alex');
     const nameError = need(root, '#join-name-error');
-    expect(nameError.textContent).toBe('Enter a display name of 1 to 40 characters.');
+    expect(nameError.textContent).toBe('Use 1 to 40 characters');
     expect(nameError.hidden).toBe(false);
     expect(nameError.getAttribute('role')).toBe('alert');
     expect(name.getAttribute('aria-invalid')).toBe('true');

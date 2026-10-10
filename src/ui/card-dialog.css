@@ -21,6 +21,10 @@
   color: var(--tray-text); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 4px;
   white-space: nowrap;
 }
+.k-open-tracker {
+  justify-self: start; display: inline-flex; align-items: center; min-height: 28px; color: var(--tray-text);
+  font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 4px;
+}
 .k-link-readonly { display: block; min-width: 0; color: var(--tray-text); font-size: 13px; overflow-wrap: anywhere; }
 .k-owner-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
 .k-owner-kind-btn {

@@ -123,6 +123,7 @@ export interface ShortcutRow { keys: string; description: string }
 /** Shortcut sheet contents are projected from the same bindings resolveKey uses. */
 export const SHORTCUTS: readonly ShortcutRow[] = [
   ...MODIFIER_BINDINGS.map(({ display, description }) => ({ keys: display, description })),
+  { keys: '[ / ]', description: 'Switch My issues view' },
   { keys: ESCAPE_BINDING.display, description: ESCAPE_BINDING.description },
   {
     keys: `G then ${SEQUENCE_BINDINGS.map((binding) => binding.display).join(' / ')}`,

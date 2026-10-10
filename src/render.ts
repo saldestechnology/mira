@@ -6,7 +6,7 @@ import { lowDetail, type FilterChip } from './ui/kanban-logic';
 import type { Store } from './store';
 import type { ImageState } from './image-loader';
 import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
-import { SVG_DEFS, objectMarkup, type MarkupCtx } from './markup';
+import { SVG_DEFS, objectMarkup, placeholderZoom, type MarkupCtx } from './markup';
 import { clearMeasureCache, escapeXml } from './text';
 import { onFontLoaded } from './fonts';
 import { USER_COLORS, WIRE } from './palette';
@@ -401,11 +401,19 @@ export class Renderer {
 
   setCamera(c: Partial<Camera>) {
     const low = lowDetail(this.cam.zoom);
+    const step = placeholderZoom(this.cam.zoom);
     this.cam = { ...this.cam, ...c };
     this.cam.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.cam.zoom));
     // a kanban draws differently below zoom 0.4, so crossing it redraws what is on screen of every kanban
     if (lowDetail(this.cam.zoom) !== low) {
       for (const id of this.els.keys()) if (isContainerType(this.store.get(id)?.type ?? '')) this.markDirty(id);
+    }
+    // a placeholder's label keeps 12 px on screen, so it is drawn again when the zoom moves to another step
+    if (placeholderZoom(this.cam.zoom) !== step) {
+      for (const id of this.els.keys()) {
+        const o = this.store.get(id);
+        if (o?.type === 'image' && this.imageState(o).kind !== 'ok') this.markDirty(id);
+      }
     }
     this.camDirty = true;
     this.overlayDirty = true;

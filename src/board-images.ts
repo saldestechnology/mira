@@ -7,6 +7,7 @@ import { newId } from './store';
 import { api } from './api';
 import { createBlobCache, createUploadQueue, idbBackend, memoryBackend, type UploadQueue, type UploadRecord, type UploadResult } from './asset-store';
 import { ImageLoader } from './image-loader';
+import { IMAGE_UPLOAD_MESSAGES } from './image-messages';
 import { toast } from './ui/common';
 import { DEMO } from './demo';
 
@@ -25,14 +26,6 @@ export function clearAssetCache(): Promise<void> {
   return assetCache.clear();
 }
 
-const REFUSED: Record<number, string> = {
-  400: 'The server could not read an image you added.',
-  402: 'This board has used its image storage. Remove images you no longer need, or ask your administrator.',
-  403: "You can't add images to this board.",
-  404: 'An image could not be added: the board was not found.',
-  413: 'An image you added is too large for this server.',
-};
-
 export class BoardImages {
   readonly loader: ImageLoader;
   readonly queue: UploadQueue;
@@ -45,9 +38,12 @@ export class BoardImages {
     this.loader = new ImageLoader({
       boardId,
       cache: this.cache,
+      uploadState: (asset) => this.queue.state(asset),
       changed: (ids) => app.r.invalidateObjects(ids),
     });
     app.r.imageState = (o) => this.loader.state(o);
+    let lostCount = 0;
+    let lostFlushQueued = false;
     this.queue = createUploadQueue({
       cache: this.cache,
       upload: async (id, blob, mime): Promise<UploadResult> => {
@@ -56,10 +52,34 @@ export class BoardImages {
         return { hash: info.hash, mime: info.mime, width: info.width, height: info.height };
       },
       apply: (rec, result) => this.apply(rec, result),
-      onRefused: (_rec, status) => toast(REFUSED[status] ?? 'An image could not be uploaded.', 6000),
+      onRefused: (_rec, status) => {
+        this.loader.retryFailed();
+        const message = status === 413
+          ? IMAGE_UPLOAD_MESSAGES.refused413(app.hostedWorkspace)
+          : IMAGE_UPLOAD_MESSAGES.refused[status] ?? IMAGE_UPLOAD_MESSAGES.retryExhausted(status);
+        toast(message, 6000);
+      },
+      onTooBig: () => {
+        this.loader.retryFailed();
+        toast(IMAGE_UPLOAD_MESSAGES.tooBig, 8000);
+      },
+      onLost: () => {
+        this.loader.retryFailed();
+        lostCount++;
+        if (lostFlushQueued) return;
+        lostFlushQueued = true;
+        queueMicrotask(() => {
+          const count = lostCount;
+          lostCount = 0;
+          lostFlushQueued = false;
+          toast(IMAGE_UPLOAD_MESSAGES.lost(count), 8000);
+        });
+      },
       canApply: (id) => id === boardId && !app.readOnly,
+      hostedWorkspace: app.hostedWorkspace,
     });
-    const run = () => void this.queue.run(boardId);
+    const ready = this.queue.retryBlocked(boardId).catch(() => undefined);
+    const run = () => void ready.then(() => this.queue.run(boardId));
     const off = app.conn.onStatus((s) => {
       if (s === 'live') {
         this.loader.retryFailed();

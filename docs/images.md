@@ -127,16 +127,20 @@ Counted per board as the sum of `bytes` over its rows. An upload that would pass
 
 ### Offline and the upload queue
 
-The browser keeps an asset store with two parts, both in IndexedDB (database `tabula-assets`, separate from the Yjs persistence):
+The browser keeps an asset store with two parts, both in IndexedDB (database `tabula-assets`, separate from the Yjs persistence). On the first pending-blob write, it makes a best-effort request for persistent browser storage so eviction is less likely:
 
 - `blobs`: `hash -> {blob, mime, width, height, boardId}`, an LRU-limited cache of everything this device has shown or created (cap 200 MB, entries for pending uploads are never evicted).
-- `uploads`: `{id, boardId, hash, tries, nextAt}` records for blobs that still need to reach the server.
+- `uploads`: `{id, boardId, hash, tries, nextAt}` records for blobs that still need to reach the server. A missing blob is kept with `lost: true`; a final server refusal is kept with `refused: <status>` and the blob stays cached. `notified: true` records that the uploader was told once.
 
 Flow when the relay is reachable: add, downscale, hash, put the blob in `blobs`, create the object with `asset = <hash>`, `POST` the bytes, rewrite `asset` if the server hash differs, drop the upload record.
 
-Flow when it is not (offline, or a local-only board with sync off): the object is created with `asset = pending:<uuid>` and the upload record keeps the `uuid` to hash mapping. Other people on the board cannot load a pending asset, so they see the placeholder with "Image not uploaded yet". On reconnect the queue runs oldest first with backoff (at most 3 in parallel), uploads, then writes the real hash into the object in one transaction, so the change syncs like an edit. If the object was deleted meanwhile, the queue drops the record and the blob stays only in the LRU.
+Flow when it is not (offline, or a local-only board with sync off): the object is created with `asset = pending:<uuid>` and the upload record keeps the `uuid` to hash mapping. Other people on the board cannot load a pending asset, so they still see the placeholder with "Image not uploaded yet". On reconnect the queue runs retryable records oldest first with backoff (at most 3 in parallel), uploads, then writes the real hash into the object in one transaction, so the change syncs like an edit. If the object was deleted meanwhile, the queue drops the record and the blob stays only in the LRU.
+
+If this browser has lost the pending bytes, the uploader keeps the record as `lost` and sees "Not uploaded: add this image again" with one toast for the pass. A final refusal (400, 402, 403, 404 or 413) keeps both the record and blob, shows the existing refusal toast once, and uses the same placeholder label on the uploader's device. Neither state retries on the timer or while online; opening that board again clears a refusal and gives it one new attempt. A lost record stays lost until the image is added again. Viewers without this browser's upload record continue to see "Image not uploaded yet".
 
 A local-only board (sync off, as in the desktop shell's default) keeps images in `blobs` and renders from blob URLs; they travel in `.drift` exports, and if the board is later connected the queue uploads them.
+
+Hosted workspaces sit behind Fly's request-replaying edge, which cannot replay a body over 1 MB. The client recognizes a hosted workspace from the existing `workspace` field in `/api/me`; there, if the normal encoding is over **900 KB**, it tries the smaller encodings described below. A final blob over 1 MB is still added and shown from this device, with one warning for the add action. If an upload over 1 MB keeps failing with server errors, after three failures it stays queued and shows a size-specific notice; other retryable failures are reported after five. Opening the board makes blocked uploads retryable again.
 
 The service worker (`public/sw.js`) gets an `assets` runtime cache for `GET /api/boards/*/assets/*`: cache first (the URL is content-addressed, so a cached copy is never stale), populated on first view. It is purged on sign-out together with `blobs`, because the bytes are private to the signed-in person. That carve-out is checked before the worker's existing early return for `/api/`, which stays for every other API path.
 
@@ -154,7 +158,9 @@ In the browser, before hashing and uploading, for raster files:
 4. If the result is larger than the original (a small, already-optimised PNG), keep the original bytes (after the server-side strip).
 5. Reject images over 36 megapixels or 16384 px a side before decoding when the dimensions can be read from the header (a pure function reads PNG, JPEG, GIF and WebP headers; the same function is used on the server).
 
-SVG is not rasterised. It is checked (see Security) and stored as is, with `nw`/`nh` from its `viewBox` (or `width`/`height`), falling back to 300 x 150 like a browser would.
+For a hosted workspace only, if the normal result is still over **900 KB** (900,000 bytes), the browser tries additional quality and size steps to get under that target: quality steps for JPEG/WebP and opaque PNG, and smaller dimensions for alpha PNG. GIFs are never re-encoded.
+
+SVG is rasterised to PNG in v1. Its `nw`/`nh` come from its `viewBox` (or `width`/`height`), falling back to 300 x 150 like a browser would; hosted uploads use the alpha-PNG size ladder.
 
 The `image` object stores the size the person sees (`w`, `h`) separately from the natural size, so the 2560 px copy can be shown at 400 board units; a **100%** action in the quick-action bar resets `w`/`h` to `nw`/`nh`.
 

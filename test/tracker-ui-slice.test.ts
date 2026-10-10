@@ -9,7 +9,7 @@ import { ticketChip, ticketChipValue } from '../src/tracker/ui/ticket-chip';
 import { buildListModel, selectAll, setGroupCollapsed, type TrackerRow } from '../src/tracker/ui/list-model';
 import * as listModelModule from '../src/tracker/ui/list-model';
 import { createTrackerVisualSeed } from '../src/tracker/ui/visual-seed';
-import { installTrackerUiBrowser } from './tracker-ui-test-helpers';
+import { installTrackerUiBrowser, uiEvent } from './tracker-ui-test-helpers';
 import { FakeElement, FakeEvent, flush } from './fake-dom';
 import { openNewIssueDialog } from '../src/tracker/ui/new-issue';
 import { renderSnippet } from '../src/tracker/ui/snippet';
@@ -54,6 +54,90 @@ describe('tracker shell slice', () => {
     store.destroy();
   });
 
+  it('reuses the All issues list for My issues with locked scopes, keyboard subtabs, bulk undo, and live cache updates', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const base = seed.tickets![0];
+    const tickets = seed.tickets!.map((ticket, index) => ({
+      ...ticket, id: `my-ticket-${index}`, key: `TAB-${800 + index}`,
+      state: index === 1
+        ? { id: 'state-done', key: 'done', name: 'Done', category: 'completed' as const }
+        : index === 2
+          ? { id: 'state-cancelled', key: 'cancelled', name: 'Cancelled', category: 'canceled' as const }
+          : { ...base.state },
+      assignee: index < 3 ? { userId: 'user-me', name: 'Johan' } : { userId: 'user-mara', name: 'Mara' },
+      creator: index === 3 ? { type: 'user' as const, id: 'user-me', name: 'Johan' } : { type: 'user' as const, id: 'user-mara', name: 'Mara' },
+    }));
+    const api = createMockTrackerApi({ ...seed, tickets });
+    const list = vi.spyOn(api, 'listTickets');
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'my-viewer', trackerId: 'tracker-demo', initialTab: 'all' });
+    await flush(40);
+    shell.el.querySelectorAll<HTMLButtonElement>('.trk-tab')[1].click();
+    await flush(40);
+    expect(shell.state).toMatchObject({ tab: 'my', mySubtab: 'active', sort: { field: 'priority', direction: 'asc' } });
+    expect(shell.el.querySelector('.trk-filter-input')).not.toBeNull();
+    expect(Array.from(shell.el.querySelectorAll<HTMLElement>('.trk-list-row')).map((row) => row.getAttribute('data-key'))).toEqual(['TAB-800']);
+    expect(shell.el.querySelector('.trk-filter-chip')?.textContent).toContain('assignee: Me');
+    expect(list.mock.calls.some(([query]) => (query?.filter as string[] | undefined)?.includes('assignee:me'))).toBe(true);
+    expect(list.mock.calls.every(([query]) => Object.keys(query ?? {}).every((key) => ['filter', 'q', 'limit', 'cursor'].includes(key)))).toBe(true);
+
+    shell.el.querySelector<HTMLButtonElement>('.trk-glyph-button')!.click();
+    await flush();
+    Array.from(browser.document.querySelectorAll<FakeElement>('.trk-picker-option')).find((option) => option.textContent === 'High priority')!.click();
+    await flush(40);
+    expect(store.ticket('TAB-800').ticket?.priority).toBe('high');
+
+    shell.el.querySelector<HTMLButtonElement>('.trk-row-select')!.click();
+    const archive = Array.from(shell.el.querySelectorAll<HTMLButtonElement>('.trk-selection-bar button')).find((button) => button.textContent === 'Archive')!;
+    archive.click();
+    await flush(40);
+    expect(store.ticket('TAB-800').ticket?.archivedAt).not.toBeNull();
+    browser.document.querySelector<FakeElement>('.toast-action')!.click();
+    await flush(40);
+    expect(store.ticket('TAB-800').ticket?.archivedAt).toBeNull();
+
+    shell.el.querySelectorAll<HTMLButtonElement>('.trk-my-subtab')[1].click();
+    await flush(40);
+    expect(shell.state.mySubtab).toBe('created');
+    expect(shell.el.querySelector('.trk-filter-chip')?.textContent).toContain('creator: Me');
+    expect(Array.from(shell.el.querySelectorAll<HTMLElement>('.trk-list-row')).map((row) => row.getAttribute('data-key'))).toEqual(['TAB-803']);
+    shell.destroy();
+    store.destroy();
+  });
+
+  it('shows the My issues empty action and registers Projects as a coming-next view', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const api = createMockTrackerApi({ ...seed, tickets: seed.tickets!.map((ticket) => ({ ...ticket, assignee: { userId: 'someone-else', name: 'Someone else' } })) });
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'empty-my-viewer', trackerId: 'tracker-demo', initialTab: 'my' });
+    await flush(40);
+    expect(shell.el.querySelector('.trk-empty-state')?.textContent).toContain('Nothing assigned to you.');
+    expect(shell.el.querySelector('.trk-empty-state .trk-primary-button')?.textContent).toContain('New issue');
+    shell.el.querySelector<HTMLButtonElement>('.trk-tab[aria-label="Projects"]')!.click();
+    expect(shell.el.querySelector('.trk-projects-empty')?.textContent).toBe('Projects are coming next.');
+    expect(shell.el.textContent).not.toContain('Not available yet.');
+    shell.destroy();
+    store.destroy();
+  });
+
+  it('shows the server invalid_filter message inline beside the filter chips', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const api = createMockTrackerApi(seed);
+    const list = vi.spyOn(api, 'listTickets').mockRejectedValue(new TrackerError('invalid_filter', 'project filters are not available yet', { path: 'project:Roadmap' }));
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'invalid-filter-viewer', trackerId: 'tracker-demo', initialTab: 'all' });
+    await flush(50);
+    expect(list).toHaveBeenCalled();
+    expect(Object.values(store.snapshot().lists).some((cache) => cache.error?.code === 'invalid_filter')).toBe(true);
+    expect(Object.values(store.snapshot().lists).map((cache) => cache.error?.message)).toContain('project filters are not available yet');
+    expect(Array.from(shell.el.querySelectorAll('.trk-filter-error')).map((error) => error.textContent)).toEqual(['project filters are not available yet']);
+    shell.destroy();
+    store.destroy();
+  });
+
   it('renders the compact real-server ticket projection and groups it without facets', async () => {
     browser = installTrackerUiBrowser();
     const seed = createTrackerVisualSeed();
@@ -75,6 +159,47 @@ describe('tracker shell slice', () => {
     expect(row?.getAttribute('data-key')).toBe(ticket.key);
     expect(shell.el.querySelector('.trk-group-heading')?.textContent).toContain(ticket.state.name);
     expect(shell.el.querySelector('.trk-results-count')?.textContent).toBe('1 issue');
+    shell.destroy();
+    store.destroy();
+  });
+
+  it('renders state lanes, moves cards by menu and keyboard, refreshes counts, and switches one lane at phone width', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const api = createMockTrackerApi(seed);
+    const transition = vi.spyOn(api, 'transitionTicket');
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'board-viewer', trackerId: 'tracker-demo', initialTab: 'board', layoutWidth: 1280 });
+    await flush(60);
+    expect(Array.from(shell.el.querySelectorAll<HTMLElement>('.trk-board-lane')).map((lane) => lane.getAttribute('data-state'))).toEqual(['todo', 'in_progress', 'in_review', 'done']);
+    expect(shell.el.querySelectorAll('.trk-board-card').length).toBe(10);
+    expect(shell.el.querySelector('.trk-board-card-title')?.textContent).toContain('Keep selection');
+    const card = Array.from(shell.el.querySelectorAll<HTMLElement>('.trk-board-card')).find((item) => item.getAttribute('data-key') === 'TAB-101')!;
+    card.querySelector<HTMLButtonElement>('.trk-board-move')!.click();
+    await flush();
+    Array.from(browser.document.querySelectorAll<FakeElement>('.trk-picker-option')).find((option) => option.textContent === 'In progress')!.click();
+    await flush(60);
+    expect(store.ticket('TAB-101').ticket?.state.key).toBe('in_progress');
+    expect(transition).toHaveBeenCalledWith('TAB-101', 'in_progress');
+    browser.document.querySelector<FakeElement>('.toast-action')!.click();
+    await flush(60);
+    expect(store.ticket('TAB-101').ticket?.state.key).toBe('todo');
+
+    const todoCard = Array.from(shell.el.querySelectorAll<HTMLElement>('.trk-board-card')).find((item) => item.getAttribute('data-key') === 'TAB-101')!;
+    (todoCard as unknown as FakeElement).dispatchEvent(uiEvent('keydown', { key: 'ArrowRight', altKey: true }));
+    await flush(60);
+    expect(store.ticket('TAB-101').ticket?.state.key).toBe('in_progress');
+    todoCard.querySelector<HTMLButtonElement>('.trk-board-card-title')!.click();
+    expect(shell.state.ticketKey).toBe('TAB-101');
+    shell.setTicket(null);
+    shell.updateLayout(390);
+    expect(shell.el.querySelector('.trk-board-state-strip')?.hasAttribute('hidden')).toBe(false);
+    expect(shell.el.querySelectorAll('.trk-board-lane')).toHaveLength(1);
+    shell.el.querySelectorAll<HTMLButtonElement>('.trk-board-state-tab')[2].click();
+    expect(shell.el.querySelector('.trk-board-lane')?.getAttribute('data-state')).toBe('in_review');
+    shell.el.querySelector<HTMLButtonElement>('.trk-board-add')!.click();
+    expect(browser.document.querySelector('.trk-new-properties button')?.textContent).toBe('In review');
+    browser.document.querySelector<FakeElement>('.trk-new-issue-back .icon-btn')!.click();
     shell.destroy();
     store.destroy();
   });
@@ -101,6 +226,25 @@ describe('tracker shell slice', () => {
     await flush(40);
     expect(listTickets).toHaveBeenCalledTimes(3);
     expect(shell.el.querySelector('.trk-list-row')?.getAttribute('data-key')).toBe(ticket.key);
+    shell.destroy();
+    store.destroy();
+  });
+
+  it('rolls back a failed board move and shows the store error', async () => {
+    browser = installTrackerUiBrowser();
+    const seed = createTrackerVisualSeed();
+    const api = createMockTrackerApi(seed);
+    vi.spyOn(api, 'transitionTicket').mockRejectedValueOnce(new TrackerError('forbidden', 'Move denied.'));
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'board-error-viewer', trackerId: 'tracker-demo', initialTab: 'board' });
+    await flush(50);
+    const card = Array.from(shell.el.querySelectorAll<HTMLElement>('.trk-board-card')).find((item) => item.getAttribute('data-key') === 'TAB-101')!;
+    card.querySelector<HTMLButtonElement>('.trk-board-move')!.click();
+    await flush();
+    Array.from(browser.document.querySelectorAll<FakeElement>('.trk-picker-option')).find((option) => option.textContent === 'In progress')!.click();
+    await flush(50);
+    expect(store.ticket('TAB-101').ticket?.state.key).toBe('todo');
+    expect(browser.document.querySelector('.toast')?.textContent).toContain('Move denied.');
     shell.destroy();
     store.destroy();
   });

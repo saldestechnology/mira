@@ -102,12 +102,8 @@ async function newestBackup() {
 const manifestPuts = () => h.fake.count('PUT', /manifests/);
 
 /** Waits until a run that is going has made its last request (it reads the manifest back and prunes after the manifest is written). */
-async function runEnded() {
-  let seen = -1;
-  while (seen !== h.fake.log.length) {
-    seen = h.fake.log.length;
-    await sleep(400);
-  }
+async function runEnded(relay: Relay, manifestName: string) {
+  await until(() => relay.out().includes(`manifest ${manifestName}`), 10_000, 'the completed backup was not logged');
 }
 
 async function timedExit(relay: Relay, limitMs = 60_000) {
@@ -155,7 +151,7 @@ describe('the settle backup of a running relay', { timeout: 60_000 }, () => {
     const writer = await connect(relay.port, 'twice-room');
     writer.getMap('objects').set('note', 'first');
     await until(() => manifestPuts() === 1, 20_000, 'no first backup');
-    await runEnded();
+    await runEnded(relay, (await newestBackup())!.name);
     const requests = h.fake.log.length;
     await sleep(2500);
     expect(h.fake.log).toHaveLength(requests);
@@ -186,7 +182,7 @@ describe('the settle backup of a running relay', { timeout: 60_000 }, () => {
     await until(() => manifestPuts() >= 1, 20_000, 'no backup after the upload');
     expect((await newestBackup())!.paths).toContain(`assets/${hash.slice(0, 2)}/${hash}`);
     // a refused upload is not a change
-    await runEnded();
+    await runEnded(relay, (await newestBackup())!.name);
     const requests = h.fake.log.length;
     const refused = await fetch(`${relay.base}/api/boards/pics/assets`, { method: 'POST', headers: { 'content-type': 'image/png' }, body: new Uint8Array(makePng()) });
     expect(refused.status).toBe(403);

@@ -49,7 +49,7 @@ describe('the importer in the Docker image', () => {
       }
       fs.writeFileSync(path.join(dir, 'package.json'), fs.readFileSync(path.join(root, 'package.json')));
       // The image installs the production dependencies (npm ci --omit=dev); the repo's node_modules stands in for them.
-      fs.symlinkSync(path.join(root, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
+      fs.symlinkSync(path.join(root, 'node_modules'), path.join(dir, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
       const env = { PATH: process.env.PATH ?? '', HOME: dir };
       const out = execFileSync(process.execPath, ['scripts/linear-import.mjs', '--help'], { cwd: dir, env, encoding: 'utf8' });
       expect(out).toMatch(/linear-import/);

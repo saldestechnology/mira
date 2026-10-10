@@ -12,10 +12,21 @@ import {
 import { LOCAL, Store } from '../src/store';
 import type { BaseObj, Obj } from '../src/types';
 import { SCHEMA_VERSION } from '../src/types';
+import { restoreSuccessToast } from '../src/ui/history';
 import { CSRF_HEADER, csrfOk } from '../server/auth.mjs';
 import { HistoryError, LIMITS, createHistory, pruneIds } from '../server/history.mjs';
 
 // docs/history.md. First the pure client logic, then the server module with an injected clock.
+
+describe('history restore toast', () => {
+  it.each([
+    ['MacIntel', 'Version restored. Press ⌘Z to undo.'],
+    ['Win32', 'Version restored. Press Ctrl+Z to undo.'],
+  ])('formats the undo hint for %s', (platform, expected) => {
+    expect(restoreSuccessToast(platform)).toBe(expected);
+  });
+});
+
 
 const box = (id: string, extra: Partial<BaseObj> = {}): BaseObj => ({
   id, type: 'shape', kind: 'rect', x: 0, y: 0, w: 100, h: 60, rotation: 0, z: 'a0', updatedAt: 1, ...extra,

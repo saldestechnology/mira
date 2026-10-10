@@ -21,8 +21,9 @@ import { reactionPicker } from './stickers';
 import { aiBarFor, glyph, onAiBarChange } from './ai-bar';
 import { openSaveTemplate } from './save-template';
 import { groupActionForSelection, groupChipAvoidBox, groupChipText } from './group-ui-logic';
-import { authState } from '../auth';
+import { authState, onAuth } from '../auth';
 import { canSaveTemplate } from './share-logic';
+import { canShowTrackerLinkAction, canShowTrackerUnlinkAction, hasRegisteredLinkDialog, hasRegisteredUnlinkConfirm, onTrackerLinkSeamChange } from '../tracker/ui/link-seam';
 
 type IconName = Parameters<typeof icon>[0];
 
@@ -185,6 +186,23 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     return b;
   }
 
+  function closeOnTouchRadioPick(content: HTMLElement) {
+    let touchPointer = false;
+    content.addEventListener('pointerdown', (event) => { touchPointer = event.pointerType === 'touch'; });
+    content.addEventListener('pointercancel', () => { touchPointer = false; });
+    content.addEventListener('click', (event) => {
+      if (!(event.target as HTMLElement | null)?.closest('[role="radio"]')) {
+        touchPointer = false;
+        return;
+      }
+      const pointerType = (event as PointerEvent).pointerType;
+      const touchPick = pointerType === 'touch' || ((pointerType !== 'mouse' && pointerType !== 'pen') && touchPointer);
+      touchPointer = false;
+      if (touchPick) closePopover();
+    });
+    return content;
+  }
+
   function menu(name: IconName, label: string, content: () => HTMLElement) {
     const b: HTMLButtonElement = h('button', { class: 'icon-btn', 'aria-label': label, 'aria-haspopup': 'dialog', onclick: () => open(b, content()) }, icon(name, 18));
     return b;
@@ -235,6 +253,9 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     if (stickies.length >= 2 && !app.readOnly) out.push(action('kanban', 'Make kanban from selection', () => app.makeKanbanFromSelection()));
     if (sel.length === 1 && sel[0].type === 'container') {
       const id = sel[0].id;
+      const auth = authState();
+      const trackerEnabled = (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+      const linked = sel[0].ext?.provider === 'tabula';
       // slice 4: Add lane and Filter, as the design's quick-action bar for a kanban, and its ⋯ menu (the bar's own ⋯ is
       // the properties panel)
       // slice 5: Open as list, the primary action on a phone (docs/kanban.md, Visual design, Phone)
@@ -248,6 +269,12 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
         action('download', 'Export cards (CSV)', () => downloadCardsCsv(app, [id])),
         action('menu', 'Kanban menu', () => app.openContainerControl(id, 'menu')),
       );
+      if (canShowTrackerLinkAction({ trackerEnabled, linked, registered: hasRegisteredLinkDialog(), ready: app.linkTrackerKanban !== null && !app.readOnly })) {
+        out.push(action('link', 'Link to tracker', () => app.linkTrackerKanban?.(id)));
+      }
+      if (canShowTrackerUnlinkAction({ trackerEnabled, linked, registered: hasRegisteredUnlinkConfirm(), ready: app.unlinkTrackerKanban !== null && !app.readOnly })) {
+        out.push(action('link', 'Unlink from tracker', () => app.unlinkTrackerKanban?.(id)));
+      }
     }
     if (sel.length === 1 && sel[0].type === 'lane') {
       const id = sel[0].id;
@@ -276,14 +303,17 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
 
     const style: HTMLElement[] = [];
     if (styleSame && styleFirst.type === 'sticky') {
-      style.push(swatch('Colour', stickyFill, () => field('Colour', stickyColorField(app, stickyFill(), (v) => {
-        app.stickyColor = v;
-        app.updateSelectedLeaves({ fill: v }, isSticky);
-      }, {
-        onLive: (v) => app.store.transact(() => app.selectedLeaves().filter(isSticky).forEach((o) => app.store.update(o.id, { fill: v }))),
-        size: 'lg',
-        label: 'Sticky note colour',
-      }))));
+      style.push(swatch('Colour', stickyFill, () => {
+        const picker = stickyColorField(app, stickyFill(), (v) => {
+          app.stickyColor = v;
+          app.updateSelectedLeaves({ fill: v }, isSticky);
+        }, {
+          onLive: (v) => app.store.transact(() => app.selectedLeaves().filter(isSticky).forEach((o) => app.store.update(o.id, { fill: v }))),
+          size: 'lg',
+          label: 'Sticky note colour',
+        });
+        return field('Colour', closeOnTouchRadioPick(picker));
+      }));
     }
     if (same && first.type === 'shape') {
       style.push(menu('shapes', 'Shape', () => {
@@ -443,6 +473,9 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   app.on('tool', sync);
   app.on('readonly', sync);
   props.onToggle(build);
+  // a bare test app has no lifetime; the real one always does
+  app.lifetime?.signal.addEventListener('abort', onAuth(() => { build(); sync(); }), { once: true });
+  app.lifetime?.signal.addEventListener('abort', onTrackerLinkSeamChange(() => { build(); sync(); }), { once: true });
   // the AI bar mounting adds or takes away Cluster; its moving makes the quick bar find its place again
   onAiBarChange(app, (why) => {
     if (why === 'layout') {

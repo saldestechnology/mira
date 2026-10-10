@@ -462,7 +462,10 @@ const SHOTS = {
 
   async 'access-removed'({ browser, acc, people }) {
     const W = 1000, H = 520;
-    const { context, page } = await newPage(browser, { base: acc.base, width: W, height: H, session: people.ana });
+    const { context, page } = await newPage(browser, {
+      base: acc.base, width: W, height: H, session: people.ana,
+      user: { id: 'docs-ana', name: ANA_USER.name, color: '#CE2C7D' },
+    });
     await openBoard(page, acc.base, 'teamnote');
     await page.evaluate(() => {
       const app = window.__board;
@@ -487,6 +490,15 @@ const SHOTS = {
     const dialog = page.getByRole('dialog');
     await dialog.getByText('People with access').first().waitFor();
     await dialog.locator('.share-people select').first().waitFor();
+    const stableOrigin = 'http://127.0.0.1:12345';
+    await dialog.getByRole('textbox', { name: 'Board link' }).evaluate((input, origin) => {
+      if (!input.value.startsWith(location.origin)) throw new Error('the board link did not use the local screenshot origin');
+      input.value = input.value.replace(location.origin, origin);
+    }, stableOrigin);
+    await dialog.locator('.modal-body .stack > p.muted.small').last().evaluate((line, origin) => {
+      if (!line.textContent?.includes(location.origin)) throw new Error('the relay note did not use the local screenshot origin');
+      line.textContent = line.textContent.replace(location.origin, origin);
+    }, stableOrigin);
     await park(page);
     await settle(page);
     await dialog.screenshot({ path: path.join(outDir, 'share-roles.png'), animations: 'disabled' });
@@ -494,14 +506,15 @@ const SHOTS = {
   },
 
   async 'admin-backups'({ browser, acc, people }) {
-    const { context, page } = await newPage(browser, { base: acc.base, width: 1100, height: 1100, session: people.owner });
+    const W = 1280, H = 1100;
+    const { context, page } = await newPage(browser, { base: acc.base, width: W, height: H, session: people.owner });
     await page.route('**/api/admin/backups', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(GUIDE_BACKUPS) }));
     await page.goto(`${acc.base}/#/admin/backups`);
     await page.waitForFunction(() => document.querySelectorAll('.backups-row').length === 3 && document.querySelectorAll('.backups-row.unreadable').length === 2);
     await page.getByText('Protected until 2026-01-22', { exact: true }).waitFor();
     await park(page);
     await settle(page);
-    await save(page, 'admin-backups');
+    await save(page, 'admin-backups', pad(await boxOf(page.locator('.admin-panel')), 12, W, H));
     await context.close();
   },
 
@@ -556,7 +569,8 @@ const SHOTS = {
     await drawer.locator('[data-id="docs-frame-note-2"][aria-level="2"]').waitFor();
     await park(page);
     await settle(page);
-    await save(page, 'layers-panel', pad(await boxOf(drawer), 12, W, H));
+    const content = union(await boxOf(drawer.locator('.drawer-head')), await boxOf(drawer.locator('.layer-row').last()));
+    await save(page, 'layers-panel', pad(content, 12, W, H));
     await context.close();
   },
 };

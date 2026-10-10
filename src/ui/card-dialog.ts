@@ -6,6 +6,8 @@ import { editCard, knownLabels, OWNER_NAME_MAX, type CardPatch } from '../contai
 import { CARD_LINK_MAX } from '../safe-obj';
 import { listLabels, toggleCardLabel } from '../labels';
 import { kanbanSwatch } from '../markup';
+import { navigateTrackerPath } from '../route';
+import { buildTrackerPath } from '../tracker-route';
 import { dialog } from './common';
 import { h, icon } from './dom';
 import { isDueDate, ownerKey, ownerOptions } from './kanban-logic';
@@ -35,8 +37,10 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const card0 = app.store.get(id);
   if (card0?.type !== 'card' || !app.canOpenCard()) return null;
   const editable = !app.readOnly && !card0.locked;
+  const linked = card0.extProvider === 'tabula';
   const canComment = !app.comments.readOnly();
   const cardOf = () => app.store.get(id) as BaseObj | undefined;
+  const projectedTitle = (card: BaseObj) => (card as BaseObj & { tracker?: { title?: string } }).tracker?.title ?? card.text ?? '';
   const save = (patch: CardPatch) => {
     if (!editable) return;
     // refused or unchanged: the fields show what the card has again
@@ -49,7 +53,7 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const dirty = { head: false, desc: false, link: false };
   const title = h('input', { class: 'input', type: 'text', maxlength: LIMITS.title * 2, 'aria-label': 'Title', autocomplete: 'off' });
   const saveTitle = () => {
-    if (!dirty.head) return;
+    if (!dirty.head || linked) return;
     dirty.head = false;
     save({ title: title.value });
   };
@@ -167,9 +171,17 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     editable ? h('button', { class: 'btn danger', type: 'button', onclick: () => { d.close(); app.setSelection([id]); app.deleteSelection(); } }, icon('trash', 16), 'Delete') : null,
   );
 
+  const openTrackerTicket = linked && card0.extKey
+    ? h('a', {
+      class: 'k-open-tracker', href: buildTrackerPath({ kind: 'ticket', key: card0.extKey }),
+      onclick: (event: Event) => { event.preventDefault(); navigateTrackerPath({ kind: 'ticket', key: card0.extKey! }); },
+    }, `Open ${card0.extKey}`)
+    : null;
+
   const note = editable ? null : h('p', { class: 'k-note' }, card0.locked && !app.readOnly ? 'This card is locked. Unlock it to change it.' : canComment ? 'You can comment on this card. Only editors can change it.' : 'Only editors can change this card.');
   const body = h('div', { class: 'k-card-form' },
     note,
+    openTrackerTicket,
     field('Title', title),
     field('Description', desc),
     h('div', { class: 'k-row2' },
@@ -191,7 +203,7 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     // a field being typed in keeps what is typed, unless what it wrote was refused
     const focused = reset ? null : document.activeElement;
     // a text field keeps what is being typed into it; otherwise it shows the card
-    if (!(dirty.head && document.activeElement === title)) title.value = card.text ?? '';
+    if (!(dirty.head && document.activeElement === title)) title.value = linked ? projectedTitle(card) : card.text ?? '';
     if (!(dirty.desc && document.activeElement === desc)) desc.value = card.desc ?? '';
     // the owner picker: me, who is here and who is already named on this board (docs/kanban.md, Owners)
     const present = app.participants().map((p) => ({ id: p.user.id, name: p.user.name }));
@@ -257,7 +269,8 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     if (focusedLabel) [...labels.querySelectorAll<HTMLElement>('button')].find((b) => b.dataset.label === focusedLabel)?.focus();
   }
 
-  for (const el of [title, desc]) el.readOnly = !editable;
+  title.readOnly = !editable || linked;
+  desc.readOnly = !editable;
   for (const el of [owner, due, link]) el.disabled = !editable;
 
   const lane = card0.parent ? app.store.get(card0.parent) : undefined;

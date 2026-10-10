@@ -30,8 +30,9 @@ import { toast } from './ui/common';
 import { commentNoticeText } from './comments';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, onRestoring, type ServerBoard } from './api';
-import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
+import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, isHostedWorkspace, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
+import { applyConnectionAccess, denialForGuestSession, GUEST_ENDED_BANNER, guestAccessEnded, watchGuestAccess } from './guest-access';
 import { createWorkspaceBanner } from './ui/workspace';
 import { installTooltips } from './ui/tooltip';
 import {
@@ -243,7 +244,7 @@ async function boardRole(id: string, auth: AuthState): Promise<ServerBoard['role
 
 /** The user as the board shows them: in accounts mode the account's name on this device's identity. */
 function boardUser(auth: AuthState) {
-  if (auth.mode === 'guest') return { ...getUser(), id: auth.guest.guestId, name: auth.guest.name };
+  if (auth.mode === 'guest') return { ...getUser(), id: auth.guest.guestId, name: auth.guest.name, guest: true };
   const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
   return me ? { ...getUser(), name: me.user.name } : getUser();
 }
@@ -268,7 +269,7 @@ async function routeTemplateEdit(id: string, auth: AuthState, seq: number) {
   const conn = scratchBoard(`template-${tpl.id}`, user);
   loadTemplate(conn.store, tpl, user.id);
   root.replaceChildren();
-  const app = new BoardApp(conn, user, root);
+  const app = new BoardApp(conn, user, root, isHostedWorkspace(auth));
   current = app;
   if (!DEMO && location.search.includes('debug')) (window as unknown as { __board: BoardApp }).__board = app;
   mountTemplateEditor(app, root, tpl);
@@ -456,6 +457,7 @@ async function route() {
   }
 
   const id = r.id;
+  const guestIdAtOpen = auth.mode === 'guest' ? auth.guest.guestId : null;
   root.className = 'board-root';
   root.replaceChildren(Object.assign(document.createElement('div'), { className: 'loading', textContent: 'Opening board…' }));
   const accounts = auth.mode === 'signed-in' || auth.mode === 'offline';
@@ -470,14 +472,19 @@ async function route() {
   // When a locked workspace becomes writable again the board reconnects, so what was typed while the relay dropped it is sent.
   const watchUnlock = createUnlockWatcher(() => conn.resync());
   // The role and, on a hosted workspace, the workspace's read-only switch decide together; a new /api/me re-decides.
+  const denialForCurrentGuest = () => {
+    const currentAuth = authState();
+    return denialForGuestSession(guestIdAtOpen, currentAuth, conn.denied);
+  };
   const applyAccess = () => {
-    const workspace = workspaceOf(authState());
+    const currentAuth = authState();
+    const workspace = workspaceOf(currentAuth);
     const access = boardAccess(role, workspace, deleted, conn.store.unsupportedFeatures().length > 0);
-    conn.store.setReadOnly(access.storeReadOnly);
-    conn.comments.setReadOnly(access.commentsReadOnly);
+    applyConnectionAccess(conn, access, currentAuth, denialForCurrentGuest());
     watchUnlock(workspace);
   };
   applyAccess();
+  const unwatchGuestAccess = watchGuestAccess(conn, guestIdAtOpen, applyAccess);
   // A feature this client lacks can arrive with a remote change, an import or a restore: the board turns read-only then too.
   // Watching starts before the import below, which writes the board's meta.
   const unwatchFeatures = watchFeatureGate(conn.store, applyAccess);
@@ -490,7 +497,7 @@ async function route() {
   }
 
   root.replaceChildren();
-  const app = new BoardApp(conn, user, root);
+  const app = new BoardApp(conn, user, root, isHostedWorkspace(auth));
   app.role = role ?? null;
   app.deleted = deleted;
   current = app;
@@ -501,13 +508,15 @@ async function route() {
   if (!DEMO && location.search.includes('debug')) Object.assign(window, { __board: app, __kanban: { cardContentHeight } });
   // the pictures of an imported board file go to this board's asset store in the background
   if (job?.imported?.assets) void app.images.adopt(job.imported.assets);
-  mountBoardUi(app, root, { home: () => (location.hash = '#/') }, { trackerId: r.trackerPosition?.trackerId, ticketKey: r.trackerPosition?.key });
-  const banner = createWorkspaceBanner((visible) => root.classList.toggle('has-banner', visible));
+  mountBoardUi(app, root, { home: () => (location.hash = '#/') }, { trackerId: r.trackerPosition?.trackerId, ticketKey: r.trackerPosition?.key, guestId: guestIdAtOpen ?? undefined });
+  const banner = createWorkspaceBanner(
+    (visible) => root.classList.toggle('has-banner', visible),
+    () => guestAccessEnded(authState(), denialForCurrentGuest()) ? GUEST_ENDED_BANNER : null,
+  );
   root.appendChild(banner.el);
   // the banner wraps at large text sizes; the editing chrome sits below its real height
   const bannerSize = new ResizeObserver(() => root.style.setProperty('--banner-h', `${Math.ceil(banner.el.getBoundingClientRect().height)}px`));
   bannerSize.observe(banner.el);
-  const unsubscribe = onAuth(applyAccess);
   const releaseNewer = mountNewerBanner(conn.store, root);
   // The relay says the read-only switch flipped: ask /api/me now instead of at the next five minute refresh.
   const unhint = conn.onWorkspaceHint(refreshMeSoon);
@@ -515,8 +524,8 @@ async function route() {
   const unnotice = conn.onCommentNotice((undone) => toast(commentNoticeText(undone)));
   releaseWorkspace = () => {
     unwatchFeatures();
+    unwatchGuestAccess();
     releaseNewer();
-    unsubscribe();
     unhint();
     unnotice();
     banner.dispose();

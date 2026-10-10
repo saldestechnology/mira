@@ -98,6 +98,32 @@ const sync = (a: Store, b: Store) => {
 };
 
 describe('group app commands and scope', () => {
+  it('closes the Templates drawer through shared Escape priority and returns focus to its rail button', () => {
+    const { app } = harness();
+    const drawer = browser.document.createElement('aside');
+    drawer.className = 'drawer show';
+    drawer.dataset.tab = 'templates';
+    const templatesButton = browser.document.createElement('button');
+    templatesButton.dataset.drawer = 'templates';
+    browser.document.body.appendChild(drawer);
+    browser.document.body.appendChild(templatesButton);
+    app.closeEscapeDrawer = vi.fn<() => boolean>(() => {
+      drawer.classList.remove('show');
+      templatesButton.focus();
+      return true;
+    });
+    call(app, 'bindKeys');
+
+    const event = key({ key: 'Escape' });
+    handlers.get('keydown')?.forEach((fn) => fn(event));
+
+    expect(drawer.classList.contains('show')).toBe(false);
+    expect(browser.document.activeElement).toBe(templatesButton);
+    expect(app.closeEscapeDrawer).toHaveBeenCalledOnce();
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(event.stopImmediatePropagation).toHaveBeenCalledOnce();
+  });
+
   it('groups and ungroups from Ctrl/Cmd+G in one undo step each, restoring the exact document state', () => {
     const store = new Store(new Y.Doc());
     store.transact(() => { store.create(note('a', 'a1', 10)); store.create(note('b', 'a8', 80)); });

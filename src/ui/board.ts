@@ -9,6 +9,7 @@ import type { GridType } from '../types';
 import { isBox } from '../types';
 import { createTrackerFrame, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
 import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from '../tracker-data';
+import { openRegisteredLinkDialog, openRegisteredUnlinkConfirm } from '../tracker/ui/link-seam';
 import { mountTrackerFrames } from '../tracker/ui/frame';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
@@ -45,9 +46,10 @@ import { isDesktop } from '../desktop-env';
 import { api } from '../api';
 import { authState, chatAvailable, imagesAvailable, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
 import { boardAccess, workspaceOf } from '../cloud-logic';
+import { denialForGuestSession, guestAccessEnded, GUEST_ENDED_SYNC_LABEL, GUEST_ENDED_SYNC_TIP } from '../guest-access';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS, colorName } from '../palette';
 import { boxBounds } from '../geometry';
-import { SHORTCUTS } from '../shortcuts';
+import { formatShortcutLabel, SHORTCUTS } from '../shortcuts';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
@@ -60,7 +62,7 @@ import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
 import { mountJoinCodes } from './join-codes';
 import { guestMark } from './guest-mark';
-import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate, isRemovedGuestLink } from './share-logic';
+import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate } from './share-logic';
 import { trackPanelTop } from './panel-top';
 import { trackMoreY } from './scroll-cue';
 import { DEMO } from '../demo';
@@ -72,9 +74,33 @@ type IconName = keyof typeof ICONS;
  * `scratch` is a template being edited on a board that is not synced or listed: it has no sharing, sync status,
  * comments, version history or Save board as template, and its home button is whatever `nav.home` does.
  */
-export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean; trackerId?: string; ticketKey?: string } = {}) {
+export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean; trackerId?: string; ticketKey?: string; guestId?: string } = {}) {
   const scratch = opts.scratch === true;
   const demo = opts.demo === true || DEMO;
+  let trackerStore: TrackerStore | null = null;
+  const trackerEnabled = () => {
+    const auth = authState();
+    return !scratch && !demo && (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+  };
+  app.linkTrackerKanban = (kanbanId) => {
+    const store = trackerStore;
+    if (!trackerEnabled() || app.readOnly || !store) return;
+    const layout = app.store.containerLayout(kanbanId);
+    const lanes = (layout?.lanes ?? []).map((laneId) => ({ id: laneId, name: app.store.get(laneId)?.name ?? 'Lane', cardCount: layout?.cards.get(laneId)?.length ?? 0 }));
+    openRegisteredLinkDialog({
+      boardId: app.conn.id, kanbanId, store,
+      kanban: { name: app.store.get(kanbanId)?.name ?? 'Kanban', lanes, cardCount: lanes.reduce((n, lane) => n + lane.cardCount, 0) },
+    });
+  };
+  app.unlinkTrackerKanban = (kanbanId) => {
+    const store = trackerStore;
+    if (!trackerEnabled() || app.readOnly || !store) return;
+    void store.listLinks(app.conn.id).then((links) => {
+      const link = links.find((candidate) => candidate.kanbanId === kanbanId);
+      if (!link) return app.notify('This kanban is no longer linked to the tracker.');
+      if (!openRegisteredUnlinkConfirm({ boardId: app.conn.id, kanbanId, link, store })) app.notify('The unlink confirmation is unavailable.');
+    }).catch((error: unknown) => app.notify(error instanceof Error ? error.message : 'Could not load tracker links.'));
+  };
   const chrome = h('div', { class: 'chrome' });
   root.appendChild(chrome);
   app.notify = toast;
@@ -98,10 +124,17 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const renderStatus = () => {
     const s = app.conn.status;
     const others = app.participants().filter((p) => !p.isMe).length;
-    status.dataset.state = s;
+    const currentAuth = authState();
+    const deniedForGuest = denialForGuestSession(opts.guestId ?? null, currentAuth, app.conn.denied);
+    const guestLinkRemoved = guestAccessEnded(currentAuth, deniedForGuest);
+    status.dataset.state = guestLinkRemoved ? 'denied' : s;
     let label = 'Local only';
     let tip = 'Sync is off. Every change is saved on this device.';
-    if (s === 'live') {
+    if (guestLinkRemoved) {
+      app.comments.setReadOnly(true);
+      label = GUEST_ENDED_SYNC_LABEL;
+      tip = GUEST_ENDED_SYNC_TIP;
+    } else if (s === 'live') {
       label = others ? `Live with ${others}` : 'Live';
       tip = 'Connected to the relay. Changes sync in real time.';
     } else if (s === 'connecting') {
@@ -109,17 +142,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       tip = 'Every change is saved on this device. Waiting for the relay to sync with others.';
     } else if (s === 'denied') {
       const restoring = app.conn.denied === 'restoring';
-      const guestLinkRemoved = isRemovedGuestLink(authState().mode, app.conn.denied);
-      if (guestLinkRemoved) app.comments.setReadOnly(true);
-      label = guestLinkRemoved ? 'Join link expired' : restoring ? 'Restoring…' : app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
-      tip = guestLinkRemoved
-        ? 'This join link has expired or was revoked. Comments are read only.'
-        : restoring
+      label = restoring ? 'Restoring…' : app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
+      tip = restoring
         ? 'The workspace is being restored from a backup. Your changes are saved on this device.'
         : 'The server refused this connection. Your changes are still saved on this device.';
     }
-    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', null, label));
-    if (s === 'denied' && isRemovedGuestLink(authState().mode, app.conn.denied)) status.setAttribute('aria-label', 'This join link has expired or was revoked');
+    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', { class: 'sync-status-label' }, label));
+    if (guestLinkRemoved) status.setAttribute('aria-label', GUEST_ENDED_SYNC_LABEL);
     else status.removeAttribute('aria-label');
     status.dataset.tip = tip;
     // a change of state is announced; the count of people changing inside "live" is announced by name below
@@ -129,6 +158,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   let lastState: string | null = null;
   app.on('status', renderStatus);
   app.on('presence', renderStatus);
+  app.lifetime.signal.addEventListener('abort', onAuth(renderStatus), { once: true });
   renderStatus();
 
   const badge = h('span', { class: 'readonly-badge', role: 'status' }, 'View only');
@@ -486,7 +516,6 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.lifetime.signal.addEventListener('abort', onAuth(syncReadOnly), { once: true });
   syncReadOnly();
 
-  let trackerStore: TrackerStore | null = null;
   let stopTrackerFrames: (() => void) | null = null;
   let trackerVisualInit = false;
   const mountTracker = (store: TrackerStore, api: TrackerApi, viewerId: string) => {
@@ -906,9 +935,10 @@ function openShortcuts(chat: boolean) {
   // the Ask AI row only for people who have the bar, the chat row only where the board has chat
   const listed = SHORTCUTS.filter((s) => (aiBarShown() || !s.ids.includes('mod+k')) && (chat || !s.ids.includes('m')));
   const groups = [...new Set(listed.map((s) => s.group))];
+  const platform = typeof navigator === 'undefined' ? '' : navigator.platform;
   const rows = groups.flatMap((group) => [
     h('tr', null, h('td', { colspan: 2, class: 'muted small' }, group)),
-    ...listed.filter((s) => s.group === group).map((s) => h('tr', null, h('td', null, h('kbd', null, s.keys)), h('td', null, s.action))),
+    ...listed.filter((s) => s.group === group).map((s) => h('tr', null, h('td', null, h('kbd', null, formatShortcutLabel(s.keys, platform))), h('td', null, s.action))),
   ]);
   dialog('Keyboard shortcuts', h('table', { class: 'shortcuts' }, ...rows), [{ label: 'Close', primary: true }]);
 }

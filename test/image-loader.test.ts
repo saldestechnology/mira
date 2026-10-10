@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createBlobCache, memoryBackend } from '../src/asset-store';
-import { FAILED_LABEL, ImageLoader, type FetchFn } from '../src/image-loader';
+import { FAILED_LABEL, ImageLoader, type FetchFn, type LoaderDeps } from '../src/image-loader';
 import type { BaseObj } from '../src/types';
 
 // docs/images.md, Rendering: one answer per image object, from this device first, then from the board's asset route.
@@ -10,11 +10,11 @@ const OTHER = 'cd'.repeat(32);
 const img = (asset: string, id = 'o1', extra: Partial<BaseObj> = {}): BaseObj => ({ id, type: 'image', x: 0, y: 0, w: 10, h: 10, rotation: 0, z: 'a', asset, mime: 'image/png', nw: 10, nh: 10, ...extra });
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
-function setup(fetchFn?: FetchFn) {
+function setup(fetchFn?: FetchFn, uploadState?: LoaderDeps['uploadState']) {
   const cache = createBlobCache(memoryBackend());
   const changed = vi.fn<(ids: string[]) => void>();
   let n = 0;
-  const loader = new ImageLoader({ boardId: 'board 1', cache, fetchFn, changed, createUrl: () => `blob:test/${++n}`, revokeUrl: () => undefined });
+  const loader = new ImageLoader({ boardId: 'board 1', cache, fetchFn, uploadState, changed, createUrl: () => `blob:test/${++n}`, revokeUrl: () => undefined });
   return { cache, changed, loader };
 }
 const reply = (status: number, type = 'image/png'): FetchFn => async () => ({ ok: status >= 200 && status < 300, status, blob: async () => new Blob([new Uint8Array(4)], { type }) });
@@ -51,6 +51,58 @@ describe('ImageLoader', () => {
     await settle();
     expect(loader.state(img('pending:1', 'a')).kind).toBe('ok');
     expect(loader.state(img('pending:2', 'b'))).toEqual({ kind: 'failed', why: 'not_uploaded' });
+  });
+
+  it('keeps local bytes visible when the queue reports a hosted size block', async () => {
+    const uploadState = vi.fn<NonNullable<LoaderDeps['uploadState']>>(async () => 'toobig');
+    const { loader, cache } = setup(undefined, uploadState);
+    await cache.put({ key: 'pending:large', blob: new Blob([new Uint8Array(4)]), mime: 'image/png', width: 1, height: 1, boardId: 'b1', pending: true });
+
+    loader.state(img('pending:large'));
+    await vi.waitFor(() => expect(loader.state(img('pending:large'))).toEqual({ kind: 'ok', url: 'blob:test/1' }), { timeout: 20_000 });
+    expect(uploadState).not.toHaveBeenCalled();
+  });
+
+  it.each(['lost', 'refused'] as const)('shows the lost label for a pending image whose queue state is %s', async (state) => {
+    const uploadState = vi.fn<NonNullable<LoaderDeps['uploadState']>>(async () => state);
+    const { loader } = setup(undefined, uploadState);
+    const object = img(`pending:${state}`);
+
+    loader.state(object);
+    await vi.waitFor(() => expect(loader.state(object)).toEqual({ kind: 'failed', why: 'lost' }), { timeout: 20_000 });
+    expect(uploadState).toHaveBeenCalledWith(`pending:${state}`);
+    expect(FAILED_LABEL.lost).toBe('Not uploaded: add this image again');
+  });
+
+  it('shows and retries a pending image blocked by the hosted size limit', async () => {
+    let state: 'toobig' | undefined = 'toobig';
+    const uploadState = vi.fn<NonNullable<LoaderDeps['uploadState']>>(async () => state);
+    const { loader, changed } = setup(undefined, uploadState);
+    const object = img('pending:large');
+
+    loader.state(object);
+    await vi.waitFor(() => expect(loader.state(object)).toEqual({ kind: 'failed', why: 'toobig' }), { timeout: 20_000 });
+    expect(FAILED_LABEL.toobig).toBe('Not uploaded: over 1 MB');
+    state = undefined;
+    loader.retryFailed();
+    expect(changed).toHaveBeenLastCalledWith(['o1']);
+    loader.state(object);
+    await vi.waitFor(() => expect(loader.state(object)).toEqual({ kind: 'failed', why: 'not_uploaded' }), { timeout: 20_000 });
+  });
+
+  it('forgets a lost state when retryFailed is called', async () => {
+    let state: 'lost' | undefined = 'lost';
+    const uploadState = vi.fn<NonNullable<LoaderDeps['uploadState']>>(async () => state);
+    const { loader, changed } = setup(undefined, uploadState);
+    const object = img('pending:retry');
+
+    loader.state(object);
+    await vi.waitFor(() => expect(loader.state(object)).toEqual({ kind: 'failed', why: 'lost' }), { timeout: 20_000 });
+    state = undefined;
+    loader.retryFailed();
+    expect(changed).toHaveBeenLastCalledWith(['o1']);
+    loader.state(object);
+    await vi.waitFor(() => expect(loader.state(object)).toEqual({ kind: 'failed', why: 'not_uploaded' }), { timeout: 20_000 });
   });
 
   it.each([

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  LARGE_PNG_BYTES, MAX_FILE_BYTES, MAX_STORED_SIDE, assetUrl, detectKind, imageFields, isHash, isPending, layoutBounds, layoutRow,
-  looksLikeSvg, pickEncoding, placedSize, planEncoding, pngHasAlpha, refusalMessage, scaleDown, svgSize,
+  HOSTED_UPLOAD_LIMIT_BYTES, HOSTED_UPLOAD_TARGET_BYTES, LARGE_PNG_BYTES, MAX_FILE_BYTES, MAX_STORED_SIDE, assetUrl, detectKind, imageFields, isHash, isPending, layoutBounds, layoutRow,
+  looksLikeSvg, pickEncoding, placedSize, planEncoding, pngHasAlpha, refusalMessage, scaleDown, shrinkLadder, svgSize,
 } from '../src/images';
 import { makeGif, makeJpeg, makePng, makeWebp } from './image-fixtures';
 
@@ -87,6 +87,37 @@ describe('pickEncoding', () => {
 
   it('falls back to the original when nothing encoded', () => {
     expect(pickEncoding(png, [])).toBe('original');
+  });
+});
+
+describe('shrinkLadder', () => {
+  it('lowers JPEG and WebP quality before stepping the longest side down to 640 px', () => {
+    for (const type of ['image/jpeg', 'image/webp'] as const) {
+      const steps = shrinkLadder({ type, hasAlpha: false, width: 1200, height: 600, bytes: 950_000, target: 900_000 });
+      expect(steps.slice(0, 4)).toEqual([0.8, 0.7, 0.6, 0.5].map((quality) => ({ type, width: 1200, height: 600, quality })));
+      const sides = [1200, 1020, 867, 737, 640];
+      expect([...new Set(steps.map((step) => step.width))]).toEqual(sides);
+      for (const width of sides) expect(steps.filter((step) => step.width === width).map((step) => step.quality)).toEqual([0.8, 0.7, 0.6, 0.5]);
+      expect(steps.at(-1)).toMatchObject({ type, width: 640, quality: 0.5 });
+    }
+  });
+
+  it('tries an opaque PNG as JPEG at the planned size, then uses the smaller JPEG ladder', () => {
+    const steps = shrinkLadder({ type: 'image/png', hasAlpha: false, width: 1200, height: 600, bytes: 950_000, target: 900_000 });
+    expect(steps.slice(0, 3)).toEqual([0.85, 0.75, 0.65].map((quality) => ({ type: 'image/jpeg', width: 1200, height: 600, quality })));
+    expect(steps.slice(3, 7)).toEqual([0.8, 0.7, 0.6, 0.5].map((quality) => ({ type: 'image/jpeg', width: 1020, height: 510, quality })));
+  });
+
+  it('shrinks a PNG with alpha by size only, and never re-encodes a GIF', () => {
+    const alpha = shrinkLadder({ type: 'image/png', hasAlpha: true, width: 1200, height: 600, bytes: 950_000, target: 900_000 });
+    expect(alpha).toEqual([
+      { type: 'image/png', width: 1020, height: 510 },
+      { type: 'image/png', width: 867, height: 434 },
+      { type: 'image/png', width: 737, height: 369 },
+      { type: 'image/png', width: 640, height: 320 },
+    ]);
+    expect(shrinkLadder({ type: 'image/gif', hasAlpha: true, width: 1200, height: 600, bytes: 950_000, target: 900_000 })).toEqual([]);
+    expect(shrinkLadder({ type: 'image/jpeg', hasAlpha: false, width: 1200, height: 600, bytes: 800_000, target: 900_000 })).toEqual([]);
   });
 });
 
@@ -182,5 +213,7 @@ describe('limits', () => {
   it('match the spec', () => {
     expect(MAX_STORED_SIDE).toBe(2560);
     expect(MAX_FILE_BYTES).toBe(10 * 1024 * 1024);
+    expect(HOSTED_UPLOAD_TARGET_BYTES).toBe(900_000);
+    expect(HOSTED_UPLOAD_LIMIT_BYTES).toBe(1_000_000);
   });
 });

@@ -18,4 +18,4 @@
 - Write tests the way `docs/testing.md` says (barriers, polling, injected clocks, lower bounds only).
 
 ## When your branch is merged
-Remove your worktree: `git -C /Volumes/External/tabula/tabula worktree remove /Volumes/External/tabula/wt/<agent>-<task>` (never `rm -rf`), then `git worktree prune`. Keep the branch until it is merged.
+After your work is merged to main and the manager confirms, the owner removes the worktree: `git -C /Volumes/External/tabula/tabula worktree remove /Volumes/External/tabula/wt/<agent>-<task>` (no `--force`, never `rm -rf`), then `git worktree prune`. That removes the `node_modules` inside it too (each worktree has its own, and they fill the disk). Keep the branch; delete it only when the manager says so. A worktree with changes you still want, or one still named in the manager's queue, is not removed: say so instead.

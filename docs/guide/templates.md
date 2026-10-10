@@ -57,7 +57,7 @@ Frames bring everything inside them, and connectors are kept when both of their 
 
 **Category** is a list, not free text. It offers the eight built-in categories and **Custom**. Those are the only categories a template can have.
 
-Guests can use templates but cannot save them. If you are a guest, the form says **Guests cannot save templates.** and **Save template** stays off.
+Guests can use templates but cannot save them. The board menu hides **Save board as template** for guests. If you reach a save form from another template action, it says **Guests cannot save templates.** and **Save template** stays off.
 
 ## Share a template
 

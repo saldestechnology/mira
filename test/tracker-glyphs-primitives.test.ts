@@ -90,7 +90,9 @@ describe('tracker primitive chips and times', () => {
     browser = installTrackerUiBrowser();
     const now = Date.UTC(2026, 9, 10, 12);
     expect(formatRelative(now, new Date(now - 5 * 60_000).toISOString())).toBe('5 minutes ago');
-    expect(formatRelative(now, new Date(now + 60_000).toISOString())).toBe('in 1 minute');
+    // a time ahead of the clock is skew, shown as now
+    expect(formatRelative(now, new Date(now + 60_000).toISOString())).toBe('just now');
+    expect(formatRelative(now, new Date(now + 8 * 30 * 86_400_000).toISOString())).toBe('just now');
     expect(formatRelative(now, 'bad-date')).toBe('Unknown time');
     const time = relativeTime(now, new Date(now - 5 * 60_000).toISOString());
     expect(time.textContent).toBe('5 minutes ago');

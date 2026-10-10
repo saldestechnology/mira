@@ -649,7 +649,6 @@ describe('status and audit', () => {
     const real = globalThis.fetch;
     const engine = h.engine({ fetch: async (url: string, init: RequestInit) => { await gate; return real(url, init); } });
     const pending = engine.runNow();
-    await new Promise((r) => setTimeout(r, 20));
     expect(engine.status().running).toBe(true);
     release();
     await pending;
@@ -1209,7 +1208,6 @@ describe('runs never overlap', () => {
     const real = globalThis.fetch;
     const engine = h.engine({ fetch: async (url: string, init: RequestInit) => { await gate; return real(url, init); } });
     const first = engine.runNow();
-    await new Promise((r) => setTimeout(r, 20));
     expect(await engine.runNow()).toEqual({ ok: false, skipped: 'running' });
     expect(await engine.runNow()).toEqual({ ok: false, skipped: 'running' });
     release();

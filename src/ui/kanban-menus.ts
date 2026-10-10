@@ -10,6 +10,8 @@ import { popover } from './common';
 import { keepKeys } from './card-dialog';
 import { h, icon } from './dom';
 import { DUE_BUCKETS, STAGES, laneMoveIndex, matchText, parseWip, type DueBucket, type KanbanFilter } from './kanban-logic';
+import { authState } from '../auth';
+import { canShowTrackerLinkAction, canShowTrackerUnlinkAction, hasRegisteredLinkDialog, hasRegisteredUnlinkConfirm } from '../tracker/ui/link-seam';
 
 // The kanban menus (docs/kanban.md, slice 4): a lane's ⋯ (rename, colour, stage, WIP limit, move, delete), the kanban's
 // ⋯ (rename, add lane, labels, lock, delete) and the Filter popover. Chrome, so tray tokens as the other menus. The menus
@@ -217,6 +219,11 @@ export function openLaneMenu(app: BoardApp, laneId: Id, at: Rect) {
 export function openContainerMenu(app: BoardApp, id: Id, at: Rect) {
   const c = app.store.get(id);
   if (app.readOnly || c?.type !== 'container') return;
+  const auth = authState();
+  const trackerEnabled = (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+  const linked = c.ext?.provider === 'tabula';
+  const showLink = canShowTrackerLinkAction({ trackerEnabled, linked, registered: hasRegisteredLinkDialog(), ready: app.linkTrackerKanban !== null });
+  const showUnlink = canShowTrackerUnlinkAction({ trackerEnabled, linked, registered: hasRegisteredUnlinkConfirm(), ready: app.unlinkTrackerKanban !== null });
   const { show, pick } = menuPopover(app, id, 'menu', at, 240, 'Kanban menu');
   show(
     item('Rename', pick(() => app.renameKanbanPart(id))),
@@ -224,6 +231,9 @@ export function openContainerMenu(app: BoardApp, id: Id, at: Rect) {
     item('Labels…', pick(() => app.openLabels?.())),
     item('Export cards (CSV)', pick(() => downloadCardsCsv(app, [id]))),
     item('Open as list', pick(() => app.openKanbanList(id))),
+    showLink || showUnlink ? sep() : null,
+    showLink ? item('Link to tracker…', pick(() => app.linkTrackerKanban?.(id))) : null,
+    showUnlink ? item('Unlink from tracker…', pick(() => app.unlinkTrackerKanban?.(id))) : null,
     sep(),
     item(c.locked ? 'Unlock' : 'Lock', pick(() => app.toggleKanbanLock(id))),
     item('Delete kanban', pick(() => app.deleteKanban(id)), { danger: true }),

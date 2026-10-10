@@ -89,7 +89,10 @@ export interface BaseObj extends Partial<StyleFields> {
   kind?: ShapeKind;
   // a frame's title; for anything else the name the layers panel shows (TAB-198)
   name?: string;
-  /** Workspace tracker shown by this frame. Tracker data lives outside the board document. */
+  /** Read-only TABULA projection fields on linked cards; trackerId also selects a workspace on tracker frames. */
+  extProvider?: 'tabula';
+  extKey?: string;
+  extUrl?: string;
   trackerId?: string;
   /** Default tracker tab for this frame: navigation state only. */
   view?: 'inbox' | 'my' | 'all' | 'board' | 'projects';
@@ -119,6 +122,8 @@ export interface BaseObj extends Partial<StyleFields> {
   privateStep?: Id;
   // container (docs/kanban.md). `parent` says which lane or container, `rank` is `<key>@<parent>`.
   layout?: string;
+  /** Server-written TABULA tracker link for a kanban container. */
+  ext?: { provider: 'tabula'; tracker: string; map: Record<string, string> };
   rank?: string;
   laneW?: number;
   stage?: typeof STAGES[number];

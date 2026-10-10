@@ -27,6 +27,7 @@ const WIP_MODES = new Set(['warn', 'block']);
 const OWNER_KIND_SET = new Set<string>(OWNER_KINDS);
 const VISIBILITY = new Set(['+', '-', '#', '~', '']);
 const TRACKER_VIEWS = new Set(['inbox', 'my', 'all', 'board', 'projects']);
+const TRACKER_CATEGORIES = new Set(['backlog', 'unstarted', 'started', 'completed', 'canceled']);
 /** Every enumerated object field and its values; the template file check (src/custom-templates.ts) uses it too. */
 export const OBJ_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
   kind: KINDS, route: ROUTES, startHead: HEAD_SET, endHead: HEAD_SET, dash: DASHES, align: ALIGNS, valign: VALIGNS,
@@ -72,6 +73,7 @@ function members(v: unknown) {
 const PROPOSED_FEATURES = new Set(['generate', 'summarise', 'cluster']);
 const PERSON_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const TRACKER_FIELD_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const TRACKER_KEY_RE = /^[A-Za-z]{2,5}-[1-9][0-9]{0,18}$/i;
 export const PROPOSED_NAME_MAX = 40;
 
 /** Removes control, zero-width, bidirectional and tag characters, the ones that change how text reads but are not seen. Tabs and line breaks stay, for the caller's whitespace collapse. */
@@ -87,6 +89,38 @@ function visibleText(s: string): string {
     out += ch;
   }
   return out;
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function cleanTrackerProjection(value: unknown): Record<string, unknown> | undefined {
+  if (!record(value)) return undefined;
+  const ticketId = typeof value.ticketId === 'string' && TRACKER_FIELD_RE.test(value.ticketId) ? value.ticketId : undefined;
+  if (!ticketId) return undefined;
+  const title = typeof value.title === 'string' ? [...visibleText(value.title).replace(/\s+/g, ' ').trim()].slice(0, 200).join('') : '';
+  const state = record(value.state) ? value.state : {};
+  const cleanState = typeof state.name === 'string' && typeof state.category === 'string' && TRACKER_CATEGORIES.has(state.category)
+    ? {
+      ...(typeof state.id === 'string' && TRACKER_FIELD_RE.test(state.id) ? { id: state.id } : {}),
+      ...(typeof state.key === 'string' && TRACKER_FIELD_RE.test(state.key) ? { key: state.key } : {}),
+      name: [...visibleText(state.name).replace(/\s+/g, ' ').trim()].slice(0, 80).join(''),
+      category: state.category,
+    }
+    : undefined;
+  return { ticketId, title, ...(cleanState ? { state: cleanState } : {}) };
+}
+
+function cleanContainerTrackerExt(value: unknown): Record<string, unknown> | undefined {
+  if (!record(value) || value.provider !== 'tabula' || typeof value.tracker !== 'string' || !TRACKER_FIELD_RE.test(value.tracker)
+    || !record(value.map)) return undefined;
+  const map: Record<string, string> = {};
+  for (const [laneId, stateKey] of Object.entries(value.map)) {
+    if (!TRACKER_FIELD_RE.test(laneId) || typeof stateKey !== 'string' || !TRACKER_FIELD_RE.test(stateKey)) continue;
+    map[laneId] = stateKey;
+  }
+  return { provider: 'tabula', tracker: value.tracker, map };
 }
 
 /**
@@ -126,6 +160,24 @@ export function safeObj<T extends Obj>(o: T): T {
   for (const k of TEXTS) if (k in out && typeof out[k] !== 'string') delete out[k];
   for (const [k, set] of ENUMS) if (k in out && !(typeof out[k] === 'string' && set.has(out[k] as string))) delete out[k];
   for (const k of ['trackerId', 'viewId', 'focusKey']) if (k in out && !(typeof out[k] === 'string' && TRACKER_FIELD_RE.test(out[k] as string))) delete out[k];
+  if (o.type === 'card') {
+    if (out.extProvider !== 'tabula') delete out.extProvider;
+    if (typeof out.extKey !== 'string' || !TRACKER_KEY_RE.test(out.extKey)) delete out.extKey;
+    if (typeof out.extUrl !== 'string' || !isSafeHttpUrl(out.extUrl)) delete out.extUrl;
+    const projection = cleanTrackerProjection(out.tracker);
+    if (projection) out.tracker = projection;
+    else delete out.tracker;
+  } else {
+    delete out.extProvider;
+    delete out.extKey;
+    delete out.extUrl;
+    delete out.tracker;
+  }
+  if (o.type === 'container') {
+    const ext = cleanContainerTrackerExt(out.ext);
+    if (ext) out.ext = ext;
+    else delete out.ext;
+  } else delete out.ext;
   if ('link' in out && !isSafeHttpUrl(out.link)) delete out.link;
   if ('kind' in out && !(typeof out.kind === 'string' && KINDS.has(out.kind))) out.kind = 'rect';
   if ('font' in out && !(typeof out.font === 'string' && FONT_RE.test(out.font))) delete out.font;

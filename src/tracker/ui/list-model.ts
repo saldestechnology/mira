@@ -17,6 +17,7 @@ export interface TrackerRow {
 export interface ListFacet { key: string; label: string; count: number }
 export type ListFacets = Partial<Record<ListGroupBy, readonly ListFacet[]>>;
 export interface ListSort { field: 'key' | 'title' | 'priority' | 'due' | 'createdAt' | 'updatedAt'; direction: 'asc' | 'desc' }
+export type ListSortPlan = ListSort | readonly ListSort[];
 export interface ListGroupModel { id: string; label: string; count: number; collapsed: boolean; rows: TrackerRow[] }
 export interface ListRenderModel {
   group: ListGroupBy;
@@ -32,7 +33,7 @@ export interface BuildListModelOptions {
   pages: readonly (readonly TrackerRow[])[];
   facets?: ListFacets;
   group: ListGroupBy;
-  sort?: ListSort;
+  sort?: ListSortPlan;
   collapsedGroups?: ReadonlySet<string> | readonly string[];
   cursorKey?: string | null;
   selectedKeys?: readonly string[];
@@ -91,18 +92,22 @@ function keyForGroup(row: TrackerRow, group: ListGroupBy): { key: string; label:
 function scalar(row: TrackerRow, field: ListSort['field']): string | number {
   const value = row[field];
   if (field === 'priority') return PRIORITY_RANK[(value as Priority | undefined) ?? 'none'];
+  if (field === 'due') return typeof value === 'string' && value ? value : '9999-99-99';
   if (typeof value === 'number') return value;
   if (typeof value === 'string') return value.toLocaleLowerCase();
   return '';
 }
 
-function sortRows(rows: TrackerRow[], sort?: ListSort): TrackerRow[] {
+function sortRows(rows: TrackerRow[], sort?: ListSortPlan): TrackerRow[] {
   if (!sort) return rows;
-  const direction = sort.direction === 'desc' ? -1 : 1;
+  const plan = Array.isArray(sort) ? sort : [sort];
   return rows.sort((a, b) => {
-    const av = scalar(a, sort.field), bv = scalar(b, sort.field);
-    if (av === bv) return a.key.localeCompare(b.key) * direction;
-    return (av < bv ? -1 : 1) * direction;
+    for (const item of plan) {
+      const av = scalar(a, item.field), bv = scalar(b, item.field);
+      if (av === bv) continue;
+      return (av < bv ? -1 : 1) * (item.direction === 'desc' ? -1 : 1);
+    }
+    return a.key.localeCompare(b.key);
   });
 }
 

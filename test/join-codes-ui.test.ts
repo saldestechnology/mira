@@ -145,7 +145,8 @@ describe('join page', () => {
     name.value = '  Sam  ';
     need(root, 'form').dispatchEvent(new FakeEvent('submit'));
     await flush();
-    expect(mocks.joinWithCode).toHaveBeenCalledWith('ABCD2345', '  Sam  ');
+    // the client now sends the cleaned name, and the server cleans it as well.
+    expect(mocks.joinWithCode).toHaveBeenCalledWith('ABCD2345', 'Sam');
     expect(mocks.setGuest).toHaveBeenCalledWith(guest);
     expect(done).toHaveBeenCalledWith(guest);
   });
