@@ -22,7 +22,10 @@ vi.mock('../src/ui/comments', () => ({ mountComments: vi.fn<() => { button: HTML
 vi.mock('../src/ui/group-ui', () => ({ mountGroupUI: vi.fn<(...args: unknown[]) => void>() }));
 vi.mock('../src/ui/focus', () => ({ mountFocus: vi.fn<(...args: unknown[]) => void>(), mutedCount: vi.fn<() => number>(() => 0), openMuted: vi.fn<(...args: unknown[]) => void>() }));
 vi.mock('../src/ui/flowbar', () => ({ mountFlowBar: vi.fn<(...args: unknown[]) => void>(), openVoteSetup: vi.fn<(...args: unknown[]) => void>(), startVote: vi.fn<(...args: unknown[]) => void>() }));
-vi.mock('../src/ui/panel-top', () => ({ trackPanelTop: vi.fn<(...args: unknown[]) => void>() }));
+vi.mock('../src/ui/panel-top', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/ui/panel-top')>()),
+  trackPanelTop: vi.fn<(...args: unknown[]) => void>(),
+}));
 vi.mock('../src/auth', () => ({
   authState: () => ({ mode: 'signed-in', me: { user: { id: 'u1', name: 'Johan', email: 'johan@example.test', role: mocks.role }, mcp: null, chat: null } }),
   chatAvailable: () => false,
@@ -86,7 +89,7 @@ function prepareBoard(role: 'member' | 'admin' | 'owner') {
 }
 
 describe('board AI entry points without a key or credits', () => {
-  it('caps narrow presence avatars while retaining the viewer and naming the remainder', async () => {
+  it('adapts the presence avatar cap from phones to wide screens while retaining the viewer and naming the remainder', async () => {
     const { root, app, emit } = prepareBoard('member');
     const guestsAndPeople = Array.from({ length: 11 }, (_, index) => ({
       clientId: index + 1,
@@ -102,24 +105,31 @@ describe('board AI entry points without a key or credits', () => {
     const allAvatars = () => root.querySelectorAll('.people .avatar') as FakeElement[];
     const peopleAvatars = () => allAvatars().filter((avatar) => !avatar.className.split(/\s+/).includes('more'));
     const overflow = () => allAvatars().find((avatar) => avatar.className.split(/\s+/).includes('more'));
-    const expectNarrowPresence = (limit: number, remainder: number) => {
+    const tray = root.querySelector('.top-right') as FakeElement;
+    let sixAvatarsFit = false;
+    Object.defineProperties(tray, {
+      clientWidth: { configurable: true, get: () => visualWindow.innerWidth - 24 },
+      scrollWidth: { configurable: true, get: () => visualWindow.innerWidth - 24 + (sixAvatarsFit ? 0 : 2) },
+      getBoundingClientRect: { configurable: true, value: () => ({ left: 12, top: 72, right: visualWindow.innerWidth - 12, bottom: 120, width: visualWindow.innerWidth - 24, height: 48 }) },
+    });
+    const expectPresence = (limit: number, remainder: number) => {
       expect(peopleAvatars().length).toBe(limit);
       expect(peopleAvatars()[0].getAttribute('aria-label')).toContain('(you)');
       expect(overflow()?.textContent).toBe(`+${remainder}`);
       expect(overflow()?.getAttribute('aria-label')).toBe(`${remainder} more people here`);
     };
 
+    for (const [width, limit] of [[320, 1], [360, 1], [379, 1], [380, 2], [390, 2], [479, 2], [480, 3], [500, 3], [1199, 3], [1200, 3], [1440, 3]] as const) {
+      visualWindow.innerWidth = width;
+      emit('presence');
+      expectPresence(limit, 12 - limit);
+    }
+
+    sixAvatarsFit = true;
+    visualWindow.innerWidth = 500;
     emit('presence');
-    expectNarrowPresence(3, 9);
+    expectPresence(6, 6);
     expect(Boolean(peopleAvatars()[2].querySelector('.avatar-guest'))).toBe(true);
-
-    visualWindow.innerWidth = 320;
-    emit('presence');
-    expectNarrowPresence(2, 10);
-
-    visualWindow.innerWidth = 1024;
-    emit('presence');
-    expectNarrowPresence(6, 6);
   });
 
   it.each(['member', 'admin', 'owner'] as const)('shows no AI controls or menu entry to a %s', async (role) => {

@@ -141,10 +141,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   // ---------------------------------------------------------------- top right
   const people = h('div', { class: 'people', 'aria-label': 'People on this board' });
+  let fitSixAvatars = false;
   let knownPeople: Map<number, string> | null = null;
   const renderPeople = () => {
     const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
-    const limit = window.innerWidth <= 340 ? 2 : window.innerWidth <= 500 ? 3 : 6;
+    const limit = window.innerWidth < 380 ? 1 : window.innerWidth < 480 ? 2 : fitSixAvatars ? 6 : 3;
     const remaining = Math.max(0, ps.length - limit);
     const canEditProfile = canChangeProfile(authState().mode);
     // who arrived and who left since the last time, said once the first list is known
@@ -168,9 +169,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       return h('button', { ...props, onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)) }, ...children);
     }), ...(remaining > 0 ? [h('span', { class: 'avatar more', role: 'img', 'aria-label': `${remaining} more people here`, 'data-tip': `${remaining} more people here` }, `+${remaining}`)] : []));
   };
-  app.on('presence', renderPeople);
-  window.addEventListener('resize', renderPeople);
-  app.onDestroy(() => window.removeEventListener('resize', renderPeople));
+  let refreshPresenceLayout = renderPeople;
+  app.on('presence', () => refreshPresenceLayout());
   renderPeople();
   const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu' }, icon('dots', 18));
   const history = scratch || demo ? null : mountHistory(app, chrome);
@@ -398,6 +398,54 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   chrome.append(topLeft, topRight, rail, penTray, stickyTray, mini.el, zoomTray);
   trackPanelTop(chrome, [topLeft, topRight]);
+  const updatePanelTop = () => {
+    const origin = chrome.getBoundingClientRect().top;
+    const bottoms = [topLeft, topRight].filter((bar) => typeof bar.getClientRects !== 'function' || bar.getClientRects().length > 0).map((bar) => bar.getBoundingClientRect().bottom);
+    const lowest = Math.max(origin, ...bottoms);
+    chrome.style.setProperty('--panel-top', `${Math.max(72, Math.ceil(lowest - origin + 8))}px`);
+  };
+  const positionPhoneTray = () => {
+    if (window.innerWidth > 860) {
+      topRight.style.removeProperty('top');
+      updatePanelTop();
+      return;
+    }
+    const origin = chrome.getBoundingClientRect().top;
+    const leftBottom = topLeft.getBoundingClientRect().bottom - origin;
+    const safeTop = typeof getComputedStyle === 'function'
+      ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-top')) || 0
+      : 0;
+    const minimumTop = (chrome.closest('.demo-board') ? 100 : 64) + safeTop;
+    topRight.style.top = `${Math.ceil(Math.max(minimumTop, leftBottom + 8))}px`;
+    updatePanelTop();
+  };
+  const refreshPeopleLayout = () => {
+    fitSixAvatars = false;
+    if (window.innerWidth >= 480) {
+      // Measure the whole tray with the six-avatar candidate rendered. Keep it only if the actual row fits.
+      fitSixAvatars = true;
+      renderPeople();
+      const tray = topRight.getBoundingClientRect();
+      const safeLeft = typeof getComputedStyle === 'function' ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-left')) || 0 : 0;
+      const safeRight = typeof getComputedStyle === 'function' ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-right')) || 0 : 0;
+      fitSixAvatars = topRight.clientWidth > 0
+        && topRight.scrollWidth <= topRight.clientWidth + 1
+        && tray.left >= 12 + safeLeft - 0.5
+        && tray.right <= window.innerWidth - 12 - safeRight + 0.5;
+    }
+    renderPeople();
+    positionPhoneTray();
+    updatePanelTop();
+  };
+  refreshPresenceLayout = refreshPeopleLayout;
+  const topLeftObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(positionPhoneTray);
+  topLeftObserver?.observe(topLeft);
+  window.addEventListener('resize', refreshPeopleLayout);
+  refreshPeopleLayout();
+  app.onDestroy(() => {
+    topLeftObserver?.disconnect();
+    window.removeEventListener('resize', refreshPeopleLayout);
+  });
   renderStickyTray();
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props, { demo });

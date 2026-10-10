@@ -2218,51 +2218,99 @@ const STATES = {
         { clientId: 71003, user: { id: 'visual-person-3', name: 'Milo', color: '#177D68' }, isMe: false },
         { clientId: 71004, user: { id: 'visual-person-4', name: 'Ari', color: '#A13BA5' }, isMe: false },
         { clientId: 71005, user: { id: 'visual-person-5', name: 'Sol', color: '#A95C00' }, isMe: false },
+        ...Array.from({ length: 6 }, (_, index) => ({ clientId: 71006 + index, user: { id: `visual-person-${index + 6}`, name: `Person ${index + 6}`, color: '#A95C00' }, isMe: false })),
       ];
-      app.participants = () => [...others, self];
+      app.participants = () => [...others.slice(0, 4), self];
       app.emit('presence');
     });
-    await env.page.waitForFunction(() => document.querySelectorAll('.people .avatar').length >= 3);
+    await env.page.waitForFunction(() => document.querySelectorAll('.people .avatar').length >= 2);
     const result = await env.page.evaluate(() => {
+      const app = window.__board;
+      const self = app.participants().find((person) => person.isMe);
+      if (!self) throw new Error('presence-avatars-many: current user is missing after seeding');
+      const others = [
+        { clientId: 71001, user: { id: 'visual-person-1', name: 'Nia', color: '#D64545' }, isMe: false },
+        { clientId: 71002, user: { id: 'visual-person-2', name: 'Guest', color: '#4977D1', guest: true }, isMe: false },
+        { clientId: 71003, user: { id: 'visual-person-3', name: 'Milo', color: '#177D68' }, isMe: false },
+        { clientId: 71004, user: { id: 'visual-person-4', name: 'Ari', color: '#A13BA5' }, isMe: false },
+        { clientId: 71005, user: { id: 'visual-person-5', name: 'Sol', color: '#A95C00' }, isMe: false },
+      ];
       const people = document.querySelector('.people');
       const topRight = document.querySelector('.top-right');
+      const topLeft = document.querySelector('.top-left');
       const rail = document.querySelector('.rail');
-      if (!people || !topRight || !rail) return { failures: ['people, top-right tray, or tool rail is missing'] };
+      if (!people || !topRight || !topLeft || !rail) return { failures: ['people, top bars, or tool rail are missing'] };
       const box = (element) => element.getBoundingClientRect();
-      const cluster = box(people), bar = box(topRight), tools = box(rail);
-      const avatars = [...people.querySelectorAll('.avatar:not(.more)')];
-      const more = people.querySelector('.avatar.more');
-      const visibleLimit = innerWidth <= 340 ? 2 : innerWidth <= 500 ? 3 : 6;
-      const remaining = Math.max(0, 6 - visibleLimit);
+      const baseLimit = innerWidth < 380 ? 1 : innerWidth < 480 ? 2 : 3;
+      const scenarios = [];
       const failures = [];
-      if (avatars.length !== visibleLimit) failures.push(`expected ${visibleLimit} visible participant avatars, got ${avatars.length}`);
-      if (!avatars[0]?.getAttribute('aria-label')?.includes('(you)')) failures.push('the viewer own avatar is not first and visible');
-      if (visibleLimit >= 3 && !avatars[2]?.querySelector('.avatar-guest')) failures.push('the visible guest avatar is missing its Guest badge');
-      if (remaining > 0 && more?.textContent?.trim() !== `+${remaining}`) failures.push(`expected a +${remaining} remainder chip, got ${more?.textContent?.trim() ?? 'none'}`);
-      if (remaining > 0 && more?.getAttribute('aria-label') !== `${remaining} more people here`) failures.push(`remainder chip has the wrong accessible name: ${more?.getAttribute('aria-label') ?? 'missing'}`);
-      if (remaining === 0 && more) failures.push('wide-screen presence unexpectedly hides participants behind a remainder chip');
-      if (cluster.left < tools.right - 0.5) failures.push(`presence cluster begins at ${Math.round(cluster.left)}px, left of rail end ${Math.round(tools.right)}px`);
-      if (cluster.right > bar.right + 0.5) failures.push('presence cluster extends outside the right-hand top bar');
-      if (bar.left < tools.right - 0.5) failures.push(`right-hand top bar starts at ${Math.round(bar.left)}px, left of rail end ${Math.round(tools.right)}px`);
-      if (bar.left < 0 || bar.right > innerWidth) failures.push('right-hand top bar extends outside the viewport');
+      const sixAvatarCandidateFits = () => {
+        const candidate = topRight.cloneNode(true);
+        const candidatePeople = candidate.querySelector('.people');
+        const avatar = candidatePeople?.querySelector('.avatar:not(.more)');
+        if (!candidatePeople || !avatar) return false;
+        const more = document.createElement('span');
+        more.className = 'avatar more';
+        more.textContent = '+6';
+        candidatePeople.replaceChildren(...Array.from({ length: 6 }, () => avatar.cloneNode(true)), more);
+        Object.assign(candidate.style, { position: 'fixed', top: '0px', left: '-10000px', right: 'auto', width: 'max-content', maxWidth: 'none', visibility: 'hidden' });
+        topRight.parentElement.append(candidate);
+        const candidateWidth = box(candidate).width;
+        candidate.remove();
+        const chromeStyle = getComputedStyle(topRight.parentElement);
+        const safeLeft = Number.parseFloat(chromeStyle.getPropertyValue('--safe-left')) || 0;
+        const safeRight = Number.parseFloat(chromeStyle.getPropertyValue('--safe-right')) || 0;
+        return candidateWidth <= innerWidth - 24 - safeLeft - safeRight + 1;
+      };
+      const fitsSix = sixAvatarCandidateFits();
+      for (const total of [5, 6]) {
+        app.participants = () => [...others.slice(0, total - 1), self];
+        app.emit('presence');
+        const bar = box(topRight), left = box(topLeft), tools = box(rail);
+        const avatars = [...people.querySelectorAll('.avatar:not(.more)')];
+        const more = people.querySelector('.avatar.more');
+        const cluster = box(people);
+        const visibleLimit = innerWidth < 480 ? baseLimit : fitsSix ? 6 : 3;
+        const expectedVisible = Math.min(total, visibleLimit);
+        const remaining = Math.max(0, total - visibleLimit);
+        const topRightChildren = [...topRight.children].map(box);
+        const rowCenters = topRightChildren.map((rect) => rect.top + rect.height / 2);
+        const avatarCenters = avatars.map((avatar) => {
+          const rect = box(avatar);
+          return rect.top + rect.height / 2;
+        });
+        if (avatars.length !== expectedVisible) failures.push(`${total} participants: expected ${expectedVisible} visible avatars, got ${avatars.length}`);
+        if (!avatars[0]?.getAttribute('aria-label')?.includes('(you)')) failures.push(`${total} participants: the viewer own avatar is not first and visible`);
+        if (expectedVisible >= 3 && !avatars[2]?.querySelector('.avatar-guest')) failures.push(`${total} participants: the visible guest avatar is missing its Guest badge`);
+        if (remaining > 0 && more?.textContent?.trim() !== `+${remaining}`) failures.push(`${total} participants: expected a +${remaining} remainder chip, got ${more?.textContent?.trim() ?? 'none'}`);
+        if (remaining > 0 && more?.getAttribute('aria-label') !== `${remaining} more people here`) failures.push(`${total} participants: remainder chip has the wrong accessible name`);
+        if (remaining > 0 && more) {
+          const chip = box(more);
+          if (Math.abs(chip.width - 30) > 0.5 || Math.abs(chip.height - 30) > 0.5) failures.push(`${total} participants: +N chip is ${Math.round(chip.width)}x${Math.round(chip.height)}, expected 30x30`);
+        }
+        if (remaining === 0 && more) failures.push(`${total} participants: no remainder is expected`);
+        if (rowCenters.length && Math.max(...rowCenters) - Math.min(...rowCenters) > 1.5) failures.push(`${total} participants: right tray children wrap onto multiple rows`);
+        if (avatarCenters.length && Math.max(...avatarCenters) - Math.min(...avatarCenters) > 1.5) failures.push(`${total} participants: participant avatars are not on one row`);
+        if (bar.left < 0 || bar.right > innerWidth) failures.push('right-hand top bar extends outside the viewport');
+        if (bar.left < left.right && bar.right > left.left && bar.top < left.bottom && bar.bottom > left.top) failures.push('right-hand top bar overlaps the left top-bar rectangle');
+        if (innerWidth <= 860 && bar.top - left.bottom < 7.5) failures.push(`phone bars have only ${Math.round(bar.top - left.bottom)}px vertical clearance, expected 8px`);
+        if (tools.top < bar.bottom + 7.5) failures.push(`tool rail starts ${Math.round(bar.bottom - tools.top)}px before the tray clears it by 8px`);
+        if (cluster.left < bar.left - 0.5 || cluster.right > bar.right + 0.5) failures.push(`${total} participants: presence cluster is outside the right tray`);
+        scenarios.push({ total, visibleAvatars: avatars.length, remainder: remaining, cluster: { left: Math.round(cluster.left), right: Math.round(cluster.right) } });
+      }
+      const finalBar = box(topRight), finalLeft = box(topLeft), finalTools = box(rail);
       return {
         failures,
         viewport: `${innerWidth}x${innerHeight}`,
-        participants: 6,
-        visibleAvatars: avatars.length,
-        cluster: { left: Math.round(cluster.left), right: Math.round(cluster.right) },
-        railRight: Math.round(tools.right),
-        topRight: { left: Math.round(bar.left), right: Math.round(bar.right) },
-        parts: [...topRight.children].map((element) => {
-          const rect = box(element);
-          return { className: element.className, left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width) };
-        }),
-        avatarRects: avatars.map((element) => {
-          const rect = box(element);
-          return { label: element.getAttribute('aria-label'), left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width) };
-        }),
+        sixAvatarCandidateFits: fitsSix,
+        participantScenarios: scenarios,
+        railTop: Math.round(finalTools.top),
+        topRight: { left: Math.round(finalBar.left), right: Math.round(finalBar.right) },
+        topLeft: { left: Math.round(finalLeft.left), right: Math.round(finalLeft.right), top: Math.round(finalLeft.top), bottom: Math.round(finalLeft.bottom) },
+        tray: { left: Math.round(finalBar.left), right: Math.round(finalBar.right), top: Math.round(finalBar.top), bottom: Math.round(finalBar.bottom) },
       };
     });
+    await env.page.waitForTimeout(900);
     console.log(`presence-avatars-many ${JSON.stringify(result)}`);
     if (result.failures.length) throw new Error(`presence-avatars-many: ${JSON.stringify(result.failures)}`);
   },

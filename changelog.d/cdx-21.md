@@ -1,4 +1,4 @@
 section: Fixed
 audience: user
 
-- Keep busy board presence avatars and the sharing controls clear of the tool rail on phone screens.
+- Keep board presence on one row on phones, with an accessible +N count and the tool rail below the top bars.
