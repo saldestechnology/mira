@@ -1380,8 +1380,10 @@ const STATES = {
   async 'tracker-inbox-narrow'({ page, base }) {
     await page.goto(`${base}/?debug=tracker-foundation&inbox=narrow`);
     await page.locator('.trk-inbox-row').nth(6).waitFor();
-    const reason = page.locator('.trk-inbox-reason').first();
-    if (await reason.isVisible()) throw new Error('tracker inbox reason text should be hidden below 720px');
+    // The reason line is what tells two notices on one ticket apart ("assigned you" / "mentioned you"), so a phone keeps it.
+    const reasons = await page.locator('.trk-inbox-reason').evaluateAll((els) => els.map((el) => ({ shown: el.getBoundingClientRect().height > 0 && getComputedStyle(el).display !== 'none', text: el.textContent.trim() })));
+    if (reasons.length < 3 || reasons.some((r) => !r.shown || !r.text)) throw new Error(`tracker inbox reason line should show below 720px: ${JSON.stringify(reasons.slice(0, 4))}`);
+    if (new Set(reasons.map((r) => r.text)).size < 3) throw new Error('tracker inbox reason lines should differ between kinds of notice');
   },
   async 'tracker-notification-prefs'({ page, base }) {
     await page.goto(`${base}/?debug=tracker-foundation&inbox=prefs`);

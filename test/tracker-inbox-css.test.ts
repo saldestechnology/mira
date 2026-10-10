@@ -15,6 +15,16 @@ describe('tracker inbox styles', () => {
     }
   });
 
+  it('keeps the reason line on a phone, so two notices on one ticket are not identical', () => {
+    const narrow = css.slice(css.indexOf('@container (max-width: 719px)'), css.indexOf('@media (forced-colors: active)'));
+    const rule = /\.trk \.trk-inbox-reason\s*\{([^}]*)\}/.exec(narrow);
+    expect(rule?.[1]).toBeDefined();
+    expect(rule![1]).not.toMatch(/display\s*:\s*none/);
+    expect(rule![1]).toMatch(/display\s*:\s*block/);
+    // the base rule cuts a long reason with an ellipsis on one line
+    expect(css).toMatch(/\.trk \.trk-inbox-reason\s*\{[^}]*text-overflow:\s*ellipsis[^}]*white-space:\s*nowrap/);
+  });
+
   it('keeps unread and selected rows distinguishable, adapts below 720px and supports forced colors', () => {
     expect(css).toContain('.trk .trk-inbox-row.is-unread');
     expect(css).toContain('.trk .trk-inbox-unread-dot::before');
