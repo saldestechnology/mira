@@ -1,0 +1,14 @@
+{
+  "storeDir": "/home/tabula-backup/store",
+  "stateDir": "/home/tabula-backup/state",
+  "pullMasterFile": "/etc/tabula-backup/pull-master",
+  "workspacesFile": "/home/tabula-backup/state/workspaces.json",
+  "prefix": "tabula",
+  "baseUrlTemplate": "https://{slug}.thetabula.cloud",
+  "concurrency": 2,
+  "keepDaily": 7,
+  "keepWeekly": 4,
+  "objectGraceDays": 35,
+  "metricsFile": "/home/tabula-backup/state/tabula_backup.prom",
+  "requestTimeoutSeconds": 120
+}

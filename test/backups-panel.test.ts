@@ -38,7 +38,7 @@ const listing = (patch: Partial<BackupList> = {}): BackupList => ({
   ],
   truncated: false,
   status: {
-    lastSuccessAt: NOW - 30 * MIN, lastFailureAt: null, lastFailureError: null, consecutiveFailures: 0, nextRunAt: NOW + 30 * MIN, running: false,
+    target: 's3', lastSuccessAt: NOW - 30 * MIN, lastFailureAt: null, lastFailureError: null, consecutiveFailures: 0, nextRunAt: NOW + 30 * MIN, running: false,
     intervalMinutes: 60, keyId: 'a1b2c3d4', bytesStored: 18_874_368, objects: 52, manifests: 4,
   },
   restore: { inProgress: null, maintenance: false, last: null, protectedBackups: [], oldData: [] },
@@ -213,6 +213,7 @@ describe('the list', () => {
       'Next backup': '2026-01-15 10:30 UTC · in 30 minutes',
       'How often': 'Every hour',
       Key: 'a1b2c3d4',
+      Target: 'S3 bucket',
       Stored: '18 MB · 4 backups · 52 files',
     });
     expect(panel().querySelectorAll('h3').map(textOf)).toEqual(['Status', '4 backups']);
