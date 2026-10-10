@@ -42,7 +42,7 @@
   border: 1px solid var(--graphite); color: var(--trk-text); font-size: 11px; font-weight: 600; white-space: nowrap;
 }
 .trk .trk-glyph { display: inline-block; flex: none; width: 16px; height: 16px; overflow: visible; color: var(--trk-text); }
-.trk .trk-relative-time { color: var(--trk-muted); font-size: 12px; white-space: nowrap; }
+.trk .trk-relative-time { color: var(--ink); font-size: 12px; white-space: nowrap; }
 .trk .trk-due-chip {
   display: inline-flex; align-items: center; min-height: 24px; padding: 2px 7px; border: 1px solid var(--graphite);
   color: var(--trk-text); background: transparent; font-size: 12px; font-weight: 600; white-space: nowrap;
@@ -285,7 +285,11 @@
 .trk-shortcuts { display: grid; gap: 1px; min-width: min(420px, 80vw); }
 .trk-shortcut-row { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: center; gap: 12px; min-height: 34px; border-bottom: 1px solid var(--rule); }
 .trk-shortcut-row kbd { font: 600 12px var(--ui); }
-.trk-inline-error, .trk-create-reason { color: var(--danger); font-size: 12px; }
+.trk-inline-error, .trk-create-reason {
+  display: flex; align-items: baseline; gap: 6px; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--danger) 80%, var(--tray-text));
+  border-radius: var(--radius-xs); color: var(--tray-text); font-size: 12px;
+}
+.trk-inline-error::before, .trk-create-reason::before { content: '!'; flex: none; color: var(--tray-text); font-weight: 700; }
 
 .trk-board-view { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; }
 .trk-board-viewbar { display: flex; flex: none; min-height: 44px; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--rule); }

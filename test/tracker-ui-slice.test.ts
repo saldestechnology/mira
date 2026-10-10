@@ -19,6 +19,26 @@ import type { TrackerTicket } from '../src/tracker-types';
 let browser: ReturnType<typeof installTrackerUiBrowser> | null = null;
 afterEach(() => { browser?.uninstall(); browser = null; vi.useRealTimers(); vi.restoreAllMocks(); });
 
+function captureDocumentKeydown(): Array<(event: FakeEvent) => void> {
+  const listeners: Array<(event: FakeEvent) => void> = [];
+  const documentWithEvents = document as unknown as { addEventListener: (type: string, listener: (event: unknown) => void) => void };
+  documentWithEvents.addEventListener = (type, listener) => {
+    if (type === 'keydown') listeners.push(listener as (event: FakeEvent) => void);
+  };
+  return listeners;
+}
+
+function dispatchTrackerKey(listeners: Array<(event: FakeEvent) => void>, target: FakeElement, key: string): FakeEvent {
+  const event = uiEvent('keydown', { target, key });
+  for (const listener of listeners) listener(event);
+  return event;
+}
+
+function simulateNativeButtonActivation(button: FakeElement, key: string, event: FakeEvent): void {
+  // fake-dom does not emulate keyboard activation; browsers click buttons when Enter/Space is not canceled.
+  if (!event.defaultPrevented && (key === 'Enter' || key === ' ')) button.click();
+}
+
 describe('tracker shell slice', () => {
   it('keeps navigation state per viewer and per frame window', () => {
     const store = createTrackerStore(createMockTrackerApi(createTrackerVisualSeed()), { isVisible: () => false });
@@ -50,6 +70,73 @@ describe('tracker shell slice', () => {
     expect(shell.el.querySelector('.trk-unread-count')?.textContent).toBe('0');
     shell.el.querySelectorAll<HTMLButtonElement>('.trk-tab')[2].click();
     expect(shell.state.tab).toBe('all');
+    shell.destroy();
+    store.destroy();
+  });
+
+  it('lets Enter activate Select TAB-101 without opening the ticket', async () => {
+    browser = installTrackerUiBrowser();
+    const api = createMockTrackerApi(createTrackerVisualSeed());
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const listeners = captureDocumentKeydown();
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'key-enter-button', trackerId: 'tracker-demo', initialTab: 'all' });
+    await store.loadMeta();
+    await store.loadList({ filter: [], limit: 50, includeFacets: true, group: 'state', sort: { field: 'updatedAt', direction: 'desc' } });
+    await flush(40);
+
+    shell.state.cursorKey = 'TAB-101';
+    const select = (shell.el as unknown as FakeElement).querySelector('.trk-list-row[data-key="TAB-101"] .trk-row-select')!;
+    select.focus();
+    const event = dispatchTrackerKey(listeners, select, 'Enter');
+    simulateNativeButtonActivation(select, 'Enter', event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(shell.state.selectedKeys).toContain('TAB-101');
+    expect(shell.state.ticketKey).toBeNull();
+    shell.destroy();
+    store.destroy();
+  });
+
+  it('keeps Enter on a focused issue row opening its ticket', async () => {
+    browser = installTrackerUiBrowser();
+    const api = createMockTrackerApi(createTrackerVisualSeed());
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const listeners = captureDocumentKeydown();
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'key-enter-row', trackerId: 'tracker-demo', initialTab: 'all' });
+    await store.loadMeta();
+    await store.loadList({ filter: [], limit: 50, includeFacets: true, group: 'state', sort: { field: 'updatedAt', direction: 'desc' } });
+    await flush(40);
+
+    const row = (shell.el as unknown as FakeElement).querySelector('.trk-list-row[data-key="TAB-101"]')!;
+    row.focus();
+    row.dispatchEvent(new FakeEvent('focus', false));
+    const event = dispatchTrackerKey(listeners, row, 'Enter');
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(shell.state.ticketKey).toBe('TAB-101');
+    shell.destroy();
+    store.destroy();
+  });
+
+  it('lets Space activate a focused selection button', async () => {
+    browser = installTrackerUiBrowser();
+    const api = createMockTrackerApi(createTrackerVisualSeed());
+    const store = createTrackerStore(api, { isVisible: () => false });
+    const listeners = captureDocumentKeydown();
+    const shell = mountTrackerShell(browser.mount() as unknown as HTMLElement, { store, api, viewerId: 'key-space-button', trackerId: 'tracker-demo', initialTab: 'all' });
+    await store.loadMeta();
+    await store.loadList({ filter: [], limit: 50, includeFacets: true, group: 'state', sort: { field: 'updatedAt', direction: 'desc' } });
+    await flush(40);
+
+    shell.state.cursorKey = 'TAB-101';
+    const select = (shell.el as unknown as FakeElement).querySelector('.trk-list-row[data-key="TAB-101"] .trk-row-select')!;
+    select.focus();
+    const event = dispatchTrackerKey(listeners, select, ' ');
+    simulateNativeButtonActivation(select, ' ', event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(shell.state.selectedKeys).toContain('TAB-101');
+    expect(shell.state.ticketKey).toBeNull();
     shell.destroy();
     store.destroy();
   });

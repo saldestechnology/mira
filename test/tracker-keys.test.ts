@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PLATFORM_MODIFIER, resolveKey, SHORTCUTS, type KeyEventLike, type KeyState } from '../src/tracker/ui/keys';
+import { isNativeActivationTarget, PLATFORM_MODIFIER, resolveKey, SHORTCUTS, type KeyEventLike, type KeyState } from '../src/tracker/ui/keys';
+import { FakeElement } from './fake-dom';
 
 function key(keyName: string, options: Partial<KeyEventLike> = {}): KeyEventLike & { prevented: boolean } {
   const event = {
@@ -12,6 +13,7 @@ function key(keyName: string, options: Partial<KeyEventLike> = {}): KeyEventLike
 }
 
 const state: KeyState = { active: true, modifier: 'ctrl', layers: ['work'] };
+const eventTarget = (element: FakeElement) => element as unknown as EventTarget;
 
 describe('tracker key resolver', () => {
   it('resolves every single-key list and global binding from the shortcut map', () => {
@@ -63,25 +65,74 @@ describe('tracker key resolver', () => {
   it('does not capture typing or picker keys, but Escape still closes the top layer', () => {
     const input = { tagName: 'INPUT', closest: () => null } as unknown as HTMLElement;
     expect(resolveKey(state, key('f', { target: input })).action).toBeNull();
+    expect(resolveKey(state, key('c', { target: input })).action).toBeNull();
+    expect(resolveKey(state, key('?', { shiftKey: true, target: input })).action).toBeNull();
+    expect(resolveKey(state, key('g', { target: input })).action).toBeNull();
+    expect(resolveKey(state, key('k', { ctrlKey: true, target: input })).action).toBeNull();
     expect(resolveKey({ ...state, focusOwner: 'picker' }, key('s')).action).toBeNull();
     expect(resolveKey({ ...state, pickerOpen: true }, key('k', { ctrlKey: true })).action).toBeNull();
     expect(resolveKey({ ...state, focusOwner: 'text', layers: ['work', 'ticket'] }, key('Escape')).action).toEqual({ type: 'escape', layer: 'ticket' });
     expect(resolveKey({ ...state, active: false }, key('j')).action).toBeNull();
   });
 
-  it('keeps shell shortcuts available while the inbox list has focus', () => {
-    const listbox = { classList: { contains: (name: string) => name === 'trk-inbox-list' } };
-    const inboxRow = {
-      tagName: 'DIV',
-      closest: (selector: string) => selector === '[role="listbox"]' || selector === '.trk-inbox-list' ? listbox : null,
-    } as unknown as HTMLElement;
-    const begin = resolveKey(state, key('g', { target: inboxRow }));
-    expect(begin.action?.type).toBe('sequence-pending');
-    expect(resolveKey({ ...state, pendingSequence: begin.pendingSequence }, key('i', { target: inboxRow })).action)
-      .toEqual({ type: 'switch-tab', tab: 'inbox' });
-    expect(resolveKey(state, key('c', { target: inboxRow })).action?.type).toBe('create');
-    expect(resolveKey(state, key('f', { target: inboxRow })).action?.type).toBe('open-filter');
-    expect(resolveKey(state, key('k', { ctrlKey: true, target: inboxRow })).action?.type).toBe('command-box');
-    expect(resolveKey(state, key('Escape', { target: inboxRow })).action?.type).toBe('escape');
+  it('keeps shell shortcuts out of the inbox listbox while preserving Escape layering', () => {
+    const inboxList = new FakeElement('div');
+    inboxList.setAttribute('role', 'listbox');
+    inboxList.classList.add('trk-inbox-list');
+    const target = eventTarget(inboxList);
+    expect(isNativeActivationTarget(target)).toBe(true);
+    for (const event of [key('g'), key('c'), key('f'), key('?', { shiftKey: true }), key('k', { ctrlKey: true })]) {
+      expect(resolveKey(state, { ...event, target }).action).toBeNull();
+    }
+    expect(resolveKey({ ...state, layers: ['work', 'ticket'] }, key('Escape', { target })).action).toEqual({ type: 'escape', layer: 'ticket' });
+  });
+
+  it('recognizes native activation controls, including nested targets and picker listboxes', () => {
+    const button = new FakeElement('button');
+    const svg = new FakeElement('svg');
+    button.appendChild(svg);
+    expect(isNativeActivationTarget(eventTarget(button))).toBe(true);
+    expect(isNativeActivationTarget(eventTarget(svg))).toBe(true);
+
+    const link = new FakeElement('a');
+    link.setAttribute('href', '/tickets/TAB-101');
+    expect(isNativeActivationTarget(eventTarget(link))).toBe(true);
+    expect(isNativeActivationTarget(eventTarget(new FakeElement('a')))).toBe(false);
+    expect(isNativeActivationTarget(eventTarget(new FakeElement('summary')))).toBe(true);
+    for (const role of ['button', 'tab', 'menuitem', 'option', 'radio', 'checkbox', 'combobox', 'switch', 'spinbutton', 'slider', 'link', 'listbox']) {
+      const widget = new FakeElement('div');
+      widget.setAttribute('role', role);
+      expect(isNativeActivationTarget(eventTarget(widget)), `role=${role}`).toBe(true);
+    }
+    for (const type of ['text', 'search', 'checkbox', 'radio', 'button', 'submit', 'range', 'hidden']) {
+      const input = new FakeElement('input');
+      input.setAttribute('type', type);
+      expect(isNativeActivationTarget(eventTarget(input)), `input[type=${type}]`).toBe(true);
+    }
+    const row = new FakeElement('div');
+    row.setAttribute('role', 'row');
+    row.classList.add('trk-list-row');
+    const grid = new FakeElement('div');
+    grid.setAttribute('role', 'grid');
+    expect(isNativeActivationTarget(eventTarget(row))).toBe(false);
+    expect(isNativeActivationTarget(eventTarget(grid))).toBe(false);
+    expect(isNativeActivationTarget(eventTarget(new FakeElement('body')))).toBe(false);
+  });
+
+  it('leaves activation keys to controls and limits grid commands to the focused list grid', () => {
+    const button = new FakeElement('button');
+    const gridRow = new FakeElement('div');
+    gridRow.setAttribute('role', 'row');
+    expect(resolveKey({ ...state, gridFocus: true }, key('Enter', { target: eventTarget(button) })).action).toBeNull();
+    expect(resolveKey({ ...state, gridFocus: true }, key(' ', { target: eventTarget(button) })).action).toBeNull();
+    expect(resolveKey({ ...state, gridFocus: true }, key('x', { target: eventTarget(button) })).action).toBeNull();
+    expect(resolveKey({ ...state, layers: ['work', 'ticket'] }, key('Escape', { target: eventTarget(button) })).action).toEqual({ type: 'escape', layer: 'ticket' });
+    expect(resolveKey({ ...state, gridFocus: true }, key('Enter', { target: eventTarget(gridRow) })).action?.type).toBe('open-ticket');
+    expect(resolveKey({ ...state, gridFocus: false }, key('Enter', { target: eventTarget(gridRow) })).action).toBeNull();
+    expect(resolveKey({ ...state, gridFocus: false }, key('j')).action).toBeNull();
+    expect(resolveKey({ ...state, gridFocus: false }, key('c')).action?.type).toBe('create');
+    expect(resolveKey({ ...state, gridFocus: false }, key('f')).action?.type).toBe('open-filter');
+    expect(resolveKey({ ...state, gridFocus: false }, key('?', { shiftKey: true })).action?.type).toBe('shortcut-sheet');
+    expect(resolveKey({ ...state, gridFocus: false }, key('g')).action?.type).toBe('sequence-pending');
   });
 });
