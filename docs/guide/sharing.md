@@ -18,7 +18,7 @@ Select **Share** at the top right of a board (or the sync status next to the boa
 
 ### Join a board with a code
 
-Your server can turn on join codes (it is off by default; ask whoever runs the server). Then an **Owner** or **Editor** sees **Join code** in the **Share** dialog. Choose the guest's role (**Commenter** or **Editor**), how long the code lasts (3 hours by default, up to 24) and how many people can use it (100 by default, up to 1,000), then create it. The code is shown once, with a link to copy: keep it private, because anyone who has it can join until it expires or is revoked.
+Join codes are for workspaces with sign-in: your server must run with accounts and have join codes turned on (they are off by default; ask whoever runs the server). Then an **Owner** or **Editor** sees **Join code** in the **Share** dialog. Choose the guest's role (**Commenter** or **Editor**), how long the code lasts (3 hours by default, up to 24) and how many people can use it (100 by default, up to 1,000), then create it. The code is shown once, with a link to copy: keep it private, because anyone who has it can join until it expires or is revoked.
 
 A guest opens the link, types a display name and joins that one board without an account. They can reach nothing else in the workspace. Guests are marked **Guest** next to their names in presence and comments. Select **Revoke** on a code to end it and every guest session made from it. If join codes are turned off on the server, guests are signed out.
 
@@ -35,9 +35,9 @@ Adding a team gives every member of that team the role, unless they already have
 
 ### Let a guest join with a code
 
-Workspaces can enable **Join code** in the Share dialog for board editors and owners. The server operator turns it on with `TABULA_JOIN_CODES=on`; it is off by default. Create a code for a **Commenter** or **Editor**, then choose its expiry (up to 24 hours) and number of uses. The code appears once, with a link you can copy. Send it only to the people you want on that board.
+Workspaces can enable **Join code** in the Share dialog for board editors and owners. The server operator turns it on with `TABULA_JOIN_CODES=on`, and it only works on a server that runs with accounts (sign-in); it is off by default. Create a code for a **Commenter** or **Editor**, then choose its expiry (up to 24 hours) and number of uses. The code appears once, with a link you can copy. Send it only to the people you want on that board.
 
-The guest opens **Join with a code**, enters a display name, and joins without an account. Their session expires with the code and is limited to that board. A commenter can read and comment; an editor can edit and add images within the board's normal image limits. They cannot open other boards or use workspace, admin, chat, AI or MCP APIs. Revoking a code ends sessions that joined with it and closes their open board connections. When a guest's code has expired or been revoked, the board stays open to look at but no longer accepts changes, and the banner offers **Sign in**, which ends the guest session. The display name must be 1 to 40 characters; a blank or overlong name is refused with a message. See [Join codes](../join-codes.md) for the security and limits.
+The guest opens **Join with a code**, enters a display name, and joins without an account. Their session expires with the code and is limited to that board. A commenter can read and comment; an editor can edit and add images within the board's normal image limits. They cannot open other boards or use workspace, admin, chat, AI or MCP APIs. Revoking a code ends sessions that joined with it and closes their open board connections. When a guest's code has expired or been revoked, the board stays open to look at but no longer accepts changes, and the banner offers **Sign in**, which ends the guest session. The display name must be 1 to 40 characters; a blank or overlong name is refused with a message.
 
 ![The Share this board dialog showing the team Design as Editor and Ana as Commenter, with the Add a person or team row below](images/share-roles.png)
 

@@ -81,7 +81,7 @@ Active [personal access tokens](ai-tools.md) for AI tools, across the workspace:
 
 The **AI** tab turns AI features on for the workspace and sets what they use: the features, the model, whether people may use their own keys, whether guests are included, the hourly limits, and the workspace key. Unlike **Access tokens**, the **AI** tab is always listed in a workspace with sign-in, even if your server cannot store keys yet.
 
-AI features are still being built. Turning them on and choosing features does not change what people can do yet.
+Turning AI on and choosing features makes those features available to people who can edit a board, as long as a usable key exists (the workspace key, a personal key where you allow them, or plan credits on a hosted workspace). Without a key the AI button does not appear. See [AI bar](ai-bar.md) for what people see.
 
 The tab has these settings. The defaults are off, with every feature selected, no personal keys, guests allowed, and 20 runs per person and 200 per workspace each hour.
 
