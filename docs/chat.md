@@ -92,8 +92,8 @@ An **access function** answers every question, once, in `server/chat-access.mjs`
 
 | Channel | Read | Write | Moderate (delete others' messages) |
 |---|---|---|---|
-| **Board** `board/<id>` | anyone with a role on the board, including viewers, commenters and guests who were given the board | owner, editor, commenter. Viewers: read only, unless the workspace setting **Viewers may post in board chat** is on. | board owner (workspace owners and admins count as owners, as everywhere) |
-| **Team** `team/<id>` | team members and workspace owners and admins; guests who are members of the team | team members; guests who are members; not workspace admins who are not members (they read and moderate) | team admins, workspace owners and admins |
+| **Board** `board/<id>` | anyone with a role on the board, including viewers and commenters (not people who joined with a board join code: they have no chat, the chat routes need a signed-in account) | owner, editor, commenter. Viewers: read only, unless the workspace setting **Viewers may post in board chat** is on. | board owner (workspace owners and admins count as owners, as everywhere) |
+| **Team** `team/<id>` | team members and workspace owners and admins (a person who only joined with a join code has no chat) | team members; not workspace admins who are not members (they read and moderate) | team admins, workspace owners and admins |
 | **Workspace** `workspace/` | owner, admin, member. **Not guests.** | the same | workspace owners and admins |
 
 Further rules:
@@ -185,7 +185,7 @@ Comments have no mentions yet (`docs/comments.md` lists them under "Not in this 
 - **Limits**: 10 mentions per message.
 - **What a mention does**: inserts `chat_mentions`, makes the channel's badge for that person a mention badge, and sends an in-app notice (a card on the board or the Chat page, like the focus-request cards) if they are online but not looking at the channel. If they are **not connected at all**, the server queues an email (below).
 - **No `@channel`, `@here` or `@everyone` in v1.** They are the easiest way to make a team channel unusable (open question).
-- **Email**: a mail kind `chat-mention` (template and params so a webhook mail relay can render its own, as `trial-ending` does), sent once per channel per person when the person has had no socket for 10 minutes since the mention and has not read it. Subject is generic ("You were mentioned in Roadmap 2026"), the body holds the sender's name and the first 140 characters, plus the link. Controlled by a per-person setting **Email me when I'm mentioned** (default on, in **Your name and colour** or a new **Notifications** line in the Account section), which needs a small `user_prefs(user_id, key, value)` table in the directory; there is no per-person preference storage today (the `settings` table is instance-wide). Emails are rate-limited to 1 per person per channel per 10 minutes and 20 per person per day. No digest in v1.
+- **Email**: a mail kind `chat-mention` (template and params so a webhook mail relay can render its own, as `trial-ending` does), sent once per channel per person when the person has had no socket for 10 minutes since the mention and has not read it. Subject is generic ("You were mentioned in Roadmap 2026"), the body holds the sender's name and the first 140 characters, plus the link. Controlled by a per-person setting **Email me when I'm mentioned** (default on, in **Your name and colour** or a new **Notifications** line in the Account section), which needs a small `user_prefs(user_id, key, value)` table in the directory; there is no per-person preference storage today (the `settings` table is instance-wide). Emails are rate-limited to 1 per person per channel per 10 minutes and 20 per person per day. No digest in v1. The email needs a mail transport you chose on purpose: with the default `TABULA_MAIL=log` nothing is delivered and the body, which holds the first 140 characters of the message, is printed to the process output (a hosted workspace sends it through the mail relay with `TABULA_MAIL=webhook`).
 - **Edits**: adding a mention in an edit notifies; removing one removes the mention row; an edit never re-sends an email already sent.
 
 ## Moderation, retention and personal data
@@ -215,9 +215,11 @@ A workspace setting **Keep chat messages** (owner and admin): *1 year* (default)
 | Message length | 2000 characters, 1 minimum | server (after normalisation) and the composer |
 | Request body | 16 KB | route option `maxBody` |
 | Mentions per message | 10 | server |
-| Posting | 20 messages a minute per person per channel, 60 a minute per person overall, burst of 5 | in-memory sliding window like the MCP limiter (`server/mcp.mjs`); REST writes have no limiter today |
+| Posting | 20 messages a minute per person per channel, 60 a minute per person overall, burst of 5 in any two seconds | in-memory sliding window like the MCP limiter (`server/mcp.mjs`, `server/chat-limits.mjs`); a request over any of its limits is refused with `429` and `Retry-After` and counts against none of them |
 | Editing and deleting | 20 a minute per person | same |
 | Reactions | 60 a minute per person | same |
+| Channel metadata, unread summary, read markers | 60 a minute per person each | same |
+| Pages of messages (`GET .../messages`) | 120 a minute per person, in any channel | same |
 | History page | 50 by default, 100 at most | server |
 | Messages kept in the browser's list | 1,000 per channel (older ones are fetched on scroll and dropped when scrolled away) | client |
 | Sockets | 10 per person, 50 subscriptions per socket | hub |

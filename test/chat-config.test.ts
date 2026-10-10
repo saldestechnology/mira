@@ -42,3 +42,13 @@ describe('TABULA_CHAT', () => {
     expect(() => load({ ...ACCOUNTS, TABULA_CHAT: value })).toThrow('TABULA_CHAT must be on or off');
   });
 });
+
+describe('TABULA_CHAT_MENTION_MAIL_AFTER_MS', () => {
+  it('shortens the mention mail delay only under NODE_ENV=test', async () => {
+    const { mailAfterMsFromEnv } = await import('../server/chat-notify.mjs');
+    expect(mailAfterMsFromEnv({ NODE_ENV: 'test', TABULA_CHAT_MENTION_MAIL_AFTER_MS: '400' })).toBe(400);
+    expect(mailAfterMsFromEnv({ NODE_ENV: 'production', TABULA_CHAT_MENTION_MAIL_AFTER_MS: '400' })).toBeUndefined();
+    expect(mailAfterMsFromEnv({ TABULA_CHAT_MENTION_MAIL_AFTER_MS: '400' })).toBeUndefined();
+    expect(mailAfterMsFromEnv({ NODE_ENV: 'test' })).toBeUndefined();
+  });
+});

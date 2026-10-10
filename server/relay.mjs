@@ -247,7 +247,7 @@ if (config.authEnabled) {
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
-    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
+    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier, mailAfterMsFromEnv }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
       import('./chat.mjs'),
       import('./chat-access.mjs'),
       import('./chat-hub.mjs'),
@@ -271,8 +271,8 @@ if (config.authEnabled) {
       readOnly: cloud?.limits().readOnly === true,
       log,
     });
-    // Not documented: the relay tests shorten the ten minutes nobody must have looked before a mention email goes
-    const mailAfterMs = Number(env.TABULA_CHAT_MENTION_MAIL_AFTER_MS) || undefined;
+    // Not documented, and only under NODE_ENV=test (chat-notify.mjs)
+    const mailAfterMs = mailAfterMsFromEnv(env);
     chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, log, mailAfterMs });
     chat = { store, access, hub: chatHub, notifier: chatNotifier, limits: createChatLimits({ limits: chatLimitsFromTestEnv(env) }) };
     // A removed member's messages stay without an account behind them (docs/chat.md, Removing and erasing people)

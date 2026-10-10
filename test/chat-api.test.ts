@@ -425,6 +425,7 @@ describe('chat over the API', { timeout: 60_000 }, () => {
       { max: 60, call: (who: Account) => h.api(who.cookie, 'GET', `/api/chat/board/${board}`) },
       { max: 60, call: (who: Account) => h.api(who.cookie, 'GET', '/api/chat/unread') },
       { max: 60, call: (who: Account) => h.api(who.cookie, 'PUT', `/api/chat/board/${board}/read`, { lastId: 0 }) },
+      { max: 120, call: (who: Account) => h.api(who.cookie, 'GET', `/api/chat/board/${board}/messages`) },
     ];
     for (const { max, call } of reads) {
       const ana = await person('commenter');

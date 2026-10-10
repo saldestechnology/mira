@@ -7,7 +7,7 @@ Comments are attached to a place on the board and are for discussing one thing. 
 ## Where to chat
 
 - **Board chat**: everyone who can open the board. It is in the right-hand panel on the board, next to comments.
-- **Team chat**: the members of a team, including guests who belong to it. Workspace owners and admins can read every team's chat and remove messages, but they can post only in teams they belong to. When a team is archived, its chat is read only.
+- **Team chat**: the members of a team. People who joined a board with a join code have no chat. Workspace owners and admins can read every team's chat and remove messages, but they can post only in teams they belong to. When a team is archived, its chat is read only.
 - **Workspace chat**: everyone in the workspace except guests. An admin can switch it off (see [Admin dashboard](admin.md#chat)).
 
 Team and workspace chat live on the **Chat page**. Board chat is also there while it is active.
