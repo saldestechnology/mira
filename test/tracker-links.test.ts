@@ -389,7 +389,7 @@ describe('following a pending projection', () => {
     const timers: Array<() => void> = [];
     const store = createTrackerStore(api, { pollMs: 60_000, setTimer: (callback) => { timers.push(callback); return timers.length; }, clearTimer: () => undefined });
     await store.loadMeta();
-    await store.linkKanban({ boardId: 'board-1', kanbanId: 'kanban-1', mapping: { 'lane-1': 'todo' }, createTickets: false });
+    await store.linkKanban({ boardId: 'board-1', kanbanId: 'kanban-1', mapping: { 'lane-1': 'todo' }, createTickets: false, idempotencyKey: 'follow-up-test-key-01' });
     for (let i = 0; i < 6 && timers.length; i += 1) {
       timers.splice(0).forEach((callback) => callback());
       for (let n = 0; n < 12; n += 1) await Promise.resolve();
