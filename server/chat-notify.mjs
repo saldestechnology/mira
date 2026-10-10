@@ -13,6 +13,16 @@ export const MAIL_AFTER_MS = 10 * 60_000;
 const DAY_MS = 24 * 60 * 60_000;
 const WORKSPACE_NAME = 'Workspace';
 
+/**
+ * The relay tests shorten the ten minutes nobody must have looked before a mention email goes, with
+ * TABULA_CHAT_MENTION_MAIL_AFTER_MS. Only under NODE_ENV=test: in production the setting would send mail to people who are
+ * still reading, so it is ignored there.
+ * @param {Record<string, string | undefined>} [env]
+ */
+export function mailAfterMsFromEnv(env = process.env) {
+  return env.NODE_ENV === 'test' ? Number(env.TABULA_CHAT_MENTION_MAIL_AFTER_MS) || undefined : undefined;
+}
+
 /** Whether a person wants mention emails: on unless they turned it off. */
 export const emailsMentions = (directory, userId) => directory.getPref(userId, PREF_EMAIL_MENTIONS) !== '0';
 

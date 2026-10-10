@@ -74,13 +74,14 @@ function loadAssets(env, authEnabled) {
   };
 }
 
-// Team chat (docs/chat.md). Off unless TABULA_CHAT=on, and only in accounts mode: chat needs an identity the server
-// trusts, which open mode does not have.
+// Team chat (docs/chat.md). On wherever accounts exist (TABULA_AUTH=on); TABULA_CHAT=off is the operator's opt-out. Never in open
+// mode: chat needs an identity the server trusts, which open mode does not have.
 function loadChat(env, authEnabled, warn) {
-  const mode = (env.TABULA_CHAT ?? '').trim() || 'off';
+  const mode = (env.TABULA_CHAT ?? '').trim() || (authEnabled ? 'on' : 'off');
   if (mode !== 'on' && mode !== 'off') throw new Error(`TABULA_CHAT must be on or off (got "${mode.slice(0, 20)}")`);
   if (mode === 'on' && !authEnabled) {
-    warn('TABULA_CHAT=on is ignored: chat needs accounts mode (TABULA_AUTH=on)');
+    // an explicit TABULA_CHAT=on in open mode still says why nothing happens
+    if ((env.TABULA_CHAT ?? '').trim()) warn('TABULA_CHAT=on is ignored: chat needs accounts mode (TABULA_AUTH=on)');
     return false;
   }
   return mode === 'on';

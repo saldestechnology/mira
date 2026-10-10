@@ -38,7 +38,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
                      kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, image-placeholders, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, guest-cursors, guest-expired, tracker-real-server, chat, chat-composer, chat-unread, chat-page, chat-page-team,
-                     chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
+                     chat-workspace-empty, chat-page-pick, chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap (the chat states
                      turn on TABULA_CHAT)
   --widths <list>    Default ${DEFAULT_WIDTHS.join(',')}
   --themes <list>    Default all themes in src/themes.ts
@@ -2599,6 +2599,37 @@ const STATES = {
     await env.page.locator('.chat-row').first().waitFor();
     if (await env.page.locator('.chat-conv.open').count()) await env.page.locator('.chat-conv.open .chat-msg').first().waitFor();
   },
+  // an empty workspace channel (docs/chat.md): the three-line welcome block, centred, with the message box focused
+  async 'chat-workspace-empty'(env) {
+    const { page, base } = env;
+    await resetChatMarker(env);
+    await page.route('**/api/chat/workspace/main/messages*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages: [], next: null }) }));
+    await page.goto(`${base}/#/chat/workspace/main`);
+    await page.locator('.chat-conv.open .chat-welcome').waitFor();
+    const lines = await page.locator('.chat-welcome').evaluate((el) => [...el.children].map((c) => c.textContent));
+    if (JSON.stringify(lines) !== JSON.stringify(['Workspace chat', 'Everyone in this workspace can read this channel.', 'Say hello.'])) throw new Error(`chat-workspace-empty: the welcome block says ${JSON.stringify(lines)}`);
+    const focused = await page.evaluate(() => document.activeElement?.classList.contains('chat-input') === true);
+    if (!focused) throw new Error('chat-workspace-empty: the message box is not focused');
+    const box = await page.locator('.chat-welcome').boundingBox();
+    const log = await page.locator('.chat-log').boundingBox();
+    if (!box || !log || Math.abs((box.y + box.height / 2) - (log.y + log.height / 2)) > log.height * 0.2) throw new Error('chat-workspace-empty: the block is not centred in the channel');
+  },
+  // no channel picked on the desktop Chat page: the same centred treatment as the welcome block
+  async 'chat-page-pick'(env) {
+    const { page, base } = env;
+    await resetChatMarker(env);
+    await page.goto(`${base}/#/chat`);
+    await page.locator('.chat-row').first().waitFor();
+    // the desktop page opens the first channel on its own, so show the "nothing picked" side the way it looks with no channel open
+    await page.evaluate(() => {
+      for (const el of document.querySelectorAll('.chat-conv > :not(.chat-conv-empty)')) el.hidden = true;
+      document.querySelector('.chat-conv-empty').hidden = false;
+    });
+    if (await page.locator('.chat-conv-empty').isVisible()) {
+      const style = await page.locator('.chat-conv-empty p').evaluate((el) => ({ weight: getComputedStyle(el).fontWeight, align: getComputedStyle(el.parentElement).textAlign }));
+      if (style.align !== 'center' || Number(style.weight) < 600) throw new Error(`chat-page-pick: the line is not styled as the welcome heading: ${JSON.stringify(style)}`);
+    }
+  },
   async 'chat-page-team'(env) {
     await resetChatMarker(env);
     await env.page.goto(`${env.base}/#/chat/team/${env.chat.teamId}`);
@@ -2717,6 +2748,8 @@ const STATES = {
   // CDX-21: six people should never push the presence cluster beneath the left tool rail on a phone.
   async 'presence-avatars-many'(env) {
     await openSeedBoard(env);
+    await env.page.locator('.comment-count.show').waitFor();
+    await env.page.locator('.top-right .btn.primary').waitFor();
     await env.page.evaluate(() => {
       const app = window.__board;
       const self = app.participants().find((person) => person.isMe);
@@ -2743,6 +2776,7 @@ const STATES = {
         { clientId: 71003, user: { id: 'visual-person-3', name: 'Milo', color: '#177D68' }, isMe: false },
         { clientId: 71004, user: { id: 'visual-person-4', name: 'Ari', color: '#A13BA5' }, isMe: false },
         { clientId: 71005, user: { id: 'visual-person-5', name: 'Sol', color: '#A95C00' }, isMe: false },
+        ...Array.from({ length: 6 }, (_, index) => ({ clientId: 71006 + index, user: { id: `visual-person-${index + 6}`, name: `Person ${index + 6}`, color: '#A95C00' }, isMe: false })),
       ];
       const people = document.querySelector('.people');
       const topRight = document.querySelector('.top-right');
@@ -2750,9 +2784,49 @@ const STATES = {
       const rail = document.querySelector('.rail');
       if (!people || !topRight || !topLeft || !rail) return { failures: ['people, top bars, or tool rail are missing'] };
       const box = (element) => element.getBoundingClientRect();
+      const rgb = (value) => {
+        const match = value.match(/rgba?\(([^)]+)\)/i);
+        if (!match) return null;
+        const channels = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
+        return channels.length >= 3 && channels.slice(0, 3).every(Number.isFinite) ? channels.slice(0, 3) : null;
+      };
+      const luminance = ([r, g, b]) => {
+        const linear = (channel) => { const value = channel / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; };
+        return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+      };
       const baseLimit = innerWidth < 380 ? 1 : innerWidth < 480 ? 2 : 3;
       const scenarios = [];
       const failures = [];
+      const badge = topRight.querySelector('.comment-count.show');
+      const commentButton = topRight.querySelector('.comment-toggle');
+      const nextControl = commentButton?.nextElementSibling;
+      const share = topRight.querySelector('.btn.primary');
+      let badgeGeometry = null;
+      if (!badge || !nextControl || !share) {
+        failures.push('visible comments badge, next control, or Share button is missing');
+      } else {
+        const trayBefore = box(topRight);
+        const shareBox = box(share);
+        const nextBox = box(nextControl);
+        badge.style.right = '-4px';
+        const currentBadge = box(badge);
+        const currentNextGap = nextBox.left - currentBadge.right;
+        const currentTray = box(topRight);
+        badge.style.removeProperty('right');
+        const insetBadge = box(badge);
+        const insetShareGap = shareBox.left - insetBadge.right;
+        const insetNextGap = nextBox.left - insetBadge.right;
+        const insetTray = box(topRight);
+        const position = getComputedStyle(badge).position;
+        if (position !== 'absolute') failures.push(`comments badge position is ${position}, expected absolute`);
+        if (insetNextGap - currentNextGap < 1.9) failures.push(`comments badge gained only ${(insetNextGap - currentNextGap).toFixed(1)}px of clearance from the next control, expected at least 2px`);
+        if (insetNextGap < 1.9) failures.push(`comments badge is only ${insetNextGap.toFixed(1)}px from the next control, expected at least 2px clearance`);
+        if (insetShareGap < 1.9) failures.push(`comments badge is only ${insetShareGap.toFixed(1)}px from Share, expected at least 2px clearance`);
+        if (Math.abs(currentTray.width - insetTray.width) > 0.5 || Math.abs(currentTray.height - insetTray.height) > 0.5 || Math.abs(trayBefore.width - insetTray.width) > 0.5 || Math.abs(trayBefore.height - insetTray.height) > 0.5) {
+          failures.push('comments badge position changed the top-right tray dimensions');
+        }
+        badgeGeometry = { currentNextGap: Number(currentNextGap.toFixed(1)), insetNextGap: Number(insetNextGap.toFixed(1)), insetShareGap: Number(insetShareGap.toFixed(1)), tray: { width: Number(insetTray.width.toFixed(1)), height: Number(insetTray.height.toFixed(1)) } };
+      }
       const sixAvatarCandidateFits = () => {
         const candidate = topRight.cloneNode(true);
         const candidatePeople = candidate.querySelector('.people');
@@ -2772,7 +2846,7 @@ const STATES = {
         return candidateWidth <= innerWidth - 24 - safeLeft - safeRight + 1;
       };
       const fitsSix = sixAvatarCandidateFits();
-      for (const total of [5, 6]) {
+      for (const total of [5, 6, 7]) {
         app.participants = () => [...others.slice(0, total - 1), self];
         app.emit('presence');
         const bar = box(topRight), left = box(topLeft), tools = box(rail);
@@ -2782,6 +2856,8 @@ const STATES = {
         const visibleLimit = innerWidth < 480 ? baseLimit : fitsSix ? 6 : 3;
         const expectedVisible = Math.min(total, visibleLimit);
         const remaining = Math.max(0, total - visibleLimit);
+        let chipContrast;
+        let avatarBadgeClearance;
         const topRightChildren = [...topRight.children].map(box);
         const rowCenters = topRightChildren.map((rect) => rect.top + rect.height / 2);
         const avatarCenters = avatars.map((avatar) => {
@@ -2796,6 +2872,22 @@ const STATES = {
         if (remaining > 0 && more) {
           const chip = box(more);
           if (Math.abs(chip.width - 30) > 0.5 || Math.abs(chip.height - 30) > 0.5) failures.push(`${total} participants: +N chip is ${Math.round(chip.width)}x${Math.round(chip.height)}, expected 30x30`);
+          const foreground = rgb(getComputedStyle(more).color);
+          const background = rgb(getComputedStyle(more).backgroundColor);
+          if (!foreground || !background) {
+            failures.push(`${total} participants: +N chip colors could not be measured`);
+          } else {
+            const foregroundLuminance = luminance(foreground), backgroundLuminance = luminance(background);
+            const contrast = (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+            if (contrast < 4.5) failures.push(`${total} participants: +N chip contrast is ${contrast.toFixed(2)}:1, expected at least 4.5:1`);
+            chipContrast = Number(contrast.toFixed(2));
+          }
+          if (total === 7 && badge) {
+            const badgeBox = box(badge);
+            const overlaps = badgeBox.left < chip.right && badgeBox.right > chip.left && badgeBox.top < chip.bottom && badgeBox.bottom > chip.top;
+            avatarBadgeClearance = badgeBox.left >= chip.right ? badgeBox.left - chip.right : badgeBox.right <= chip.left ? chip.left - badgeBox.right : 0;
+            if ([390, 1280].includes(innerWidth) && overlaps) failures.push(`${total} participants: comments badge overlaps the +N avatar chip at ${innerWidth}px`);
+          }
         }
         if (remaining === 0 && more) failures.push(`${total} participants: no remainder is expected`);
         if (rowCenters.length && Math.max(...rowCenters) - Math.min(...rowCenters) > 1.5) failures.push(`${total} participants: right tray children wrap onto multiple rows`);
@@ -2805,7 +2897,7 @@ const STATES = {
         if (innerWidth <= 860 && bar.top - left.bottom < 7.5) failures.push(`phone bars have only ${Math.round(bar.top - left.bottom)}px vertical clearance, expected 8px`);
         if (tools.top < bar.bottom + 7.5) failures.push(`tool rail starts ${Math.round(bar.bottom - tools.top)}px before the tray clears it by 8px`);
         if (cluster.left < bar.left - 0.5 || cluster.right > bar.right + 0.5) failures.push(`${total} participants: presence cluster is outside the right tray`);
-        scenarios.push({ total, visibleAvatars: avatars.length, remainder: remaining, cluster: { left: Math.round(cluster.left), right: Math.round(cluster.right) } });
+        scenarios.push({ total, visibleAvatars: avatars.length, remainder: remaining, ...(chipContrast === undefined ? {} : { chipContrast }), ...(avatarBadgeClearance === undefined ? {} : { avatarBadgeClearance: Number(avatarBadgeClearance.toFixed(1)) }), cluster: { left: Math.round(cluster.left), right: Math.round(cluster.right) } });
       }
       const finalBar = box(topRight), finalLeft = box(topLeft), finalTools = box(rail);
       return {
@@ -2813,6 +2905,7 @@ const STATES = {
         viewport: `${innerWidth}x${innerHeight}`,
         sixAvatarCandidateFits: fitsSix,
         participantScenarios: scenarios,
+        badgeGeometry,
         railTop: Math.round(finalTools.top),
         topRight: { left: Math.round(finalBar.left), right: Math.round(finalBar.right) },
         topLeft: { left: Math.round(finalLeft.left), right: Math.round(finalLeft.right), top: Math.round(finalLeft.top), bottom: Math.round(finalLeft.bottom) },
@@ -4028,7 +4121,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-new-issue', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
