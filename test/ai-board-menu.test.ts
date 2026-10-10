@@ -66,7 +66,7 @@ function prepareBoard(role: 'member' | 'admin' | 'owner') {
       cache: new Map(), get: () => undefined, shown: () => [], onReadOnly: () => () => undefined,
     },
     conn: { id: 'board', status: 'live', denied: null, onAiRuns: () => () => undefined },
-    participants: () => [],
+    participants: (): { clientId: number; user: { id: string; name: string; color: string; guest?: boolean }; isMe: boolean }[] => [],
     on: (event: string, fn: () => void) => { listeners.set(event, [...(listeners.get(event) ?? []), fn]); return () => undefined; },
     r: { root, cursorLayer, onCamera: () => () => undefined, contentBounds: () => null, svg: { addEventListener: () => undefined, removeEventListener: () => undefined, contains: () => false } },
     flow: { isVoting: () => false },
@@ -81,10 +81,47 @@ function prepareBoard(role: 'member' | 'admin' | 'owner') {
     personalKeys: false, hasSecret: true, myKey: null, credits: false,
   }), { status: 200, headers: { 'content-type': 'application/json' } }));
   vi.stubGlobal('fetch', fetchMock);
-  return { root, app, fetchMock };
+  const emit = (event: string) => listeners.get(event)?.forEach((listener) => listener());
+  return { root, app, fetchMock, emit };
 }
 
 describe('board AI entry points without a key or credits', () => {
+  it('caps narrow presence avatars while retaining the viewer and naming the remainder', async () => {
+    const { root, app, emit } = prepareBoard('member');
+    const guestsAndPeople = Array.from({ length: 11 }, (_, index) => ({
+      clientId: index + 1,
+      user: { id: `person-${index + 1}`, name: index === 1 ? 'Guest' : `Person ${index + 1}`, color: '#D64545', ...(index === 1 ? { guest: true } : {}) },
+      isMe: false,
+    }));
+    app.participants = () => [...guestsAndPeople, { clientId: 100, user: { id: 'u1', name: 'Johan', color: '#2F6FED' }, isMe: true }];
+    const visualWindow = window as unknown as { innerWidth: number };
+    visualWindow.innerWidth = 390;
+    const { mountBoardUi } = await import('../src/ui/board');
+    mountBoardUi(app as never, root as unknown as HTMLElement, { home: () => undefined });
+
+    const allAvatars = () => root.querySelectorAll('.people .avatar') as FakeElement[];
+    const peopleAvatars = () => allAvatars().filter((avatar) => !avatar.className.split(/\s+/).includes('more'));
+    const overflow = () => allAvatars().find((avatar) => avatar.className.split(/\s+/).includes('more'));
+    const expectNarrowPresence = (limit: number, remainder: number) => {
+      expect(peopleAvatars().length).toBe(limit);
+      expect(peopleAvatars()[0].getAttribute('aria-label')).toContain('(you)');
+      expect(overflow()?.textContent).toBe(`+${remainder}`);
+      expect(overflow()?.getAttribute('aria-label')).toBe(`${remainder} more people here`);
+    };
+
+    emit('presence');
+    expectNarrowPresence(3, 9);
+    expect(Boolean(peopleAvatars()[2].querySelector('.avatar-guest'))).toBe(true);
+
+    visualWindow.innerWidth = 320;
+    emit('presence');
+    expectNarrowPresence(2, 10);
+
+    visualWindow.innerWidth = 1024;
+    emit('presence');
+    expectNarrowPresence(6, 6);
+  });
+
   it.each(['member', 'admin', 'owner'] as const)('shows no AI controls or menu entry to a %s', async (role) => {
     const { root, app, fetchMock } = prepareBoard(role);
     const { mountBoardUi } = await import('../src/ui/board');

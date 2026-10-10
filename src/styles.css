@@ -175,9 +175,9 @@ select.input {
 .sync-status[data-state='denied'] { color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
 
 .top-right { position: absolute; top: calc(12px + var(--safe-top)); right: calc(12px + var(--safe-right)); display: flex; align-items: center; gap: 6px; padding: 4px; }
-.people { display: flex; padding-right: 4px; }
+.people { display: flex; flex: none; padding-right: 4px; }
 .avatar {
-  position: relative; width: 30px; height: 30px; margin-left: -6px; border-radius: 50%; border: 2px solid var(--tray); background: var(--c, var(--graphite));
+  position: relative; width: 30px; height: 30px; margin-left: -6px; flex: none; border-radius: 50%; border: 2px solid var(--tray); background: var(--c, var(--graphite));
   color: #fff; font: 700 11px var(--ui); display: grid; place-items: center; padding: 0;
 }
 .avatar:first-child { margin-left: 0; }
@@ -577,10 +577,18 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .demo-board > .chrome .top-right { top: calc(100px + var(--safe-top)); }
   /* the Steps list fills the window from under the top bars, so its message sits over the top bars (two lines at most) for its 2.6 s instead of over the list */
   body:has(.popover.wide) .toast { top: calc(8px + var(--safe-top)); width: max-content; padding: 8px 12px; font-size: 13px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
-  /* the narrowest phones (320 px): the bar would run under the tool rail, so its gaps and the Share padding give way until it starts right of the rail */
-  @media (max-width: 340px) {
-    .top-right { gap: 2px; padding: 4px 2px; max-width: calc(100% - var(--rail-clear) - 12px - var(--safe-right)); }
+  /* Touch targets widen the avatar row: wrap the right tray into the width beside the rail on phones. */
+  @media (max-width: 500px) {
+    /* Touch targets make a full avatar row wider than the space beside the tool rail. Let the tray wrap, but anchor its width and every row on the clear side. */
+    .top-right { gap: 4px; padding: 4px 2px; max-width: calc(100% - var(--rail-clear) - 12px - var(--safe-right)); flex-wrap: wrap; justify-content: flex-end; }
     .top-right .btn.primary { padding-left: 10px; padding-right: 10px; }
+  }
+  @media (max-width: 340px) {
+    .top-right { gap: 2px; }
+  }
+  /* A coarse-pointer tablet can be just wider than the three-avatar phone breakpoint and still need 44px hit targets. */
+  @media (pointer: coarse) and (min-width: 501px) and (max-width: 528px) {
+    .top-right { gap: 4px; padding: 4px 2px; max-width: calc(100% - var(--rail-clear) - 12px - var(--safe-right)); flex-wrap: wrap; justify-content: flex-end; }
   }
   .demo-board > .chrome .rail { top: calc(144px + var(--safe-top)); max-height: calc(100% - 168px - var(--safe-top) - var(--safe-bottom)); }
   .board-name { width: 14ch; }

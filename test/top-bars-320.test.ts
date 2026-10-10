@@ -6,8 +6,10 @@ import { describe, expect, it } from 'vitest';
 const css = readFileSync(fileURLToPath(new URL('../src/styles.css', import.meta.url)), 'utf8');
 
 describe('the right top bar at the narrowest phones', () => {
-  it('tightens its gaps and Share padding at 340 px and below, and never reaches under the rail', () => {
-    expect(css).toMatch(/@media \(max-width: 340px\) \{\s*\.top-right \{[^}]*gap: 2px;[^}]*max-width: calc\(100% - var\(--rail-clear\)/);
+  it('wraps the touch-sized tray clear of the rail and tightens the narrowest phones further', () => {
+    expect(css).toMatch(/@media \(max-width: 500px\) \{[^}]*\.top-right \{[^}]*max-width: calc\(100% - var\(--rail-clear\)[^}]*flex-wrap: wrap;[^}]*justify-content: flex-end;/);
+    expect(css).toMatch(/@media \(max-width: 340px\) \{\s*\.top-right \{[^}]*gap: 2px;/);
     expect(css).toMatch(/\.top-right \.btn\.primary \{ padding-left: 10px; padding-right: 10px; \}/);
+    expect(css).toMatch(/@media \(pointer: coarse\) and \(min-width: 501px\) and \(max-width: 528px\) \{\s*\.top-right \{[^}]*max-width: calc\(100% - var\(--rail-clear\)[^}]*flex-wrap: wrap;[^}]*justify-content: flex-end;/);
   });
 });

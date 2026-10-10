@@ -144,6 +144,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   let knownPeople: Map<number, string> | null = null;
   const renderPeople = () => {
     const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
+    const limit = window.innerWidth <= 340 ? 2 : window.innerWidth <= 500 ? 3 : 6;
+    const remaining = Math.max(0, ps.length - limit);
     const canEditProfile = canChangeProfile(authState().mode);
     // who arrived and who left since the last time, said once the first list is known
     const now = new Map(ps.filter((p) => !p.isMe).map((p) => [p.clientId, `${p.user.name}${p.user.guest ? ' · Guest' : ''}`]));
@@ -153,7 +155,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     }
     knownPeople = now;
     const runs = liveRunsFor(app)?.list() ?? [];
-    people.replaceChildren(...ps.slice(0, 6).map((p) => {
+    people.replaceChildren(...ps.slice(0, limit).map((p) => {
       // someone with an AI run or preview on the board: the spark, and what they are doing as their name
       const busy = p.isMe ? null : badgeRun(p.user, runs);
       const name = `${p.user.name}${p.user.guest ? ' · Guest' : ''}`;
@@ -164,9 +166,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       const props = { class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': `${tip}, initials ${avatarText}` };
       if (p.isMe && !canEditProfile) return h('span', { ...props, role: 'img' }, ...children);
       return h('button', { ...props, onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)) }, ...children);
-    }), ...(ps.length > 6 ? [h('span', { class: 'avatar more' }, `+${ps.length - 6}`)] : []));
+    }), ...(remaining > 0 ? [h('span', { class: 'avatar more', role: 'img', 'aria-label': `${remaining} more people here`, 'data-tip': `${remaining} more people here` }, `+${remaining}`)] : []));
   };
   app.on('presence', renderPeople);
+  window.addEventListener('resize', renderPeople);
+  app.onDestroy(() => window.removeEventListener('resize', renderPeople));
   renderPeople();
   const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu' }, icon('dots', 18));
   const history = scratch || demo ? null : mountHistory(app, chrome);

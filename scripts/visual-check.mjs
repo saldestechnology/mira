@@ -33,7 +33,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
   --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
-                     mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
+                     mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
                      kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
@@ -2204,6 +2204,67 @@ const STATES = {
     });
     console.log(`top-bars-320 ${JSON.stringify(result)}`);
     if (result.failures.length) throw new Error(`top-bars-320: ${JSON.stringify(result.failures)}`);
+  },
+  // CDX-21: six people should never push the presence cluster beneath the left tool rail on a phone.
+  async 'presence-avatars-many'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      const self = app.participants().find((person) => person.isMe);
+      if (!self) throw new Error('presence-avatars-many: current user is missing');
+      const others = [
+        { clientId: 71001, user: { id: 'visual-person-1', name: 'Nia', color: '#D64545' }, isMe: false },
+        { clientId: 71002, user: { id: 'visual-person-2', name: 'Guest', color: '#4977D1', guest: true }, isMe: false },
+        { clientId: 71003, user: { id: 'visual-person-3', name: 'Milo', color: '#177D68' }, isMe: false },
+        { clientId: 71004, user: { id: 'visual-person-4', name: 'Ari', color: '#A13BA5' }, isMe: false },
+        { clientId: 71005, user: { id: 'visual-person-5', name: 'Sol', color: '#A95C00' }, isMe: false },
+      ];
+      app.participants = () => [...others, self];
+      app.emit('presence');
+    });
+    await env.page.waitForFunction(() => document.querySelectorAll('.people .avatar').length >= 3);
+    const result = await env.page.evaluate(() => {
+      const people = document.querySelector('.people');
+      const topRight = document.querySelector('.top-right');
+      const rail = document.querySelector('.rail');
+      if (!people || !topRight || !rail) return { failures: ['people, top-right tray, or tool rail is missing'] };
+      const box = (element) => element.getBoundingClientRect();
+      const cluster = box(people), bar = box(topRight), tools = box(rail);
+      const avatars = [...people.querySelectorAll('.avatar:not(.more)')];
+      const more = people.querySelector('.avatar.more');
+      const visibleLimit = innerWidth <= 340 ? 2 : innerWidth <= 500 ? 3 : 6;
+      const remaining = Math.max(0, 6 - visibleLimit);
+      const failures = [];
+      if (avatars.length !== visibleLimit) failures.push(`expected ${visibleLimit} visible participant avatars, got ${avatars.length}`);
+      if (!avatars[0]?.getAttribute('aria-label')?.includes('(you)')) failures.push('the viewer own avatar is not first and visible');
+      if (visibleLimit >= 3 && !avatars[2]?.querySelector('.avatar-guest')) failures.push('the visible guest avatar is missing its Guest badge');
+      if (remaining > 0 && more?.textContent?.trim() !== `+${remaining}`) failures.push(`expected a +${remaining} remainder chip, got ${more?.textContent?.trim() ?? 'none'}`);
+      if (remaining > 0 && more?.getAttribute('aria-label') !== `${remaining} more people here`) failures.push(`remainder chip has the wrong accessible name: ${more?.getAttribute('aria-label') ?? 'missing'}`);
+      if (remaining === 0 && more) failures.push('wide-screen presence unexpectedly hides participants behind a remainder chip');
+      if (cluster.left < tools.right - 0.5) failures.push(`presence cluster begins at ${Math.round(cluster.left)}px, left of rail end ${Math.round(tools.right)}px`);
+      if (cluster.right > bar.right + 0.5) failures.push('presence cluster extends outside the right-hand top bar');
+      if (bar.left < tools.right - 0.5) failures.push(`right-hand top bar starts at ${Math.round(bar.left)}px, left of rail end ${Math.round(tools.right)}px`);
+      if (bar.left < 0 || bar.right > innerWidth) failures.push('right-hand top bar extends outside the viewport');
+      return {
+        failures,
+        viewport: `${innerWidth}x${innerHeight}`,
+        participants: 6,
+        visibleAvatars: avatars.length,
+        cluster: { left: Math.round(cluster.left), right: Math.round(cluster.right) },
+        railRight: Math.round(tools.right),
+        topRight: { left: Math.round(bar.left), right: Math.round(bar.right) },
+        parts: [...topRight.children].map((element) => {
+          const rect = box(element);
+          return { className: element.className, left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width) };
+        }),
+        avatarRects: avatars.map((element) => {
+          const rect = box(element);
+          return { label: element.getAttribute('aria-label'), left: Math.round(rect.left), right: Math.round(rect.right), width: Math.round(rect.width) };
+        }),
+      };
+    });
+    console.log(`presence-avatars-many ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`presence-avatars-many: ${JSON.stringify(result.failures)}`);
   },
   async 'press-board'(env) {
     await openSeedBoard(env);
