@@ -73,7 +73,8 @@ function run<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore)
 }
 
 export const readChannel = (userId: string, key: string): Promise<CachedChannel | undefined> =>
-  run<CachedChannel>(CHANNELS, 'readonly', (s) => s.get(scopedKey(userId, key)) as IDBRequest<CachedChannel>);
+  run<CachedChannel & { userId?: string }>(CHANNELS, 'readonly', (s) => s.get(scopedKey(userId, key)) as IDBRequest<CachedChannel & { userId?: string }>).then((row) =>
+    row && row.userId === userId ? { key, messages: row.messages, savedAt: row.savedAt } : undefined);
 
 export const writeChannel = (userId: string, entry: CachedChannel): Promise<unknown> =>
   run(CHANNELS, 'readwrite', (s) => s.put({ ...entry, userId, key: scopedKey(userId, entry.key) }));

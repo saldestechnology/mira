@@ -6,7 +6,7 @@
 // closed the badge comes from the `hello` summary and the `unread` frames, which carry counts and never text.
 
 import { ApiError, api, type ChatChannelEntry, type ChatChannelInfo, type ChatMessage } from './api';
-import { authState, chatAvailable, onAuth } from './auth';
+import { authState, chatAvailable, onAuth, registerAuthChatReset } from './auth';
 import * as cache from './chat-cache';
 import {
   CACHE_PER_CHANNEL, KEEP_IN_LIST, PAGE, applyDelete, backoffMs, classifyFailure, countUnread, delivered, enqueue, mergeMessages,
@@ -58,6 +58,8 @@ interface Channel {
   lastRead: number | null;
   newAfter: number | null;
   loading: boolean;
+  /** Reconnect hello arrived while the newest page was still loading. */
+  catchUpPending: boolean;
   /** Socket frames to reconcile after a newest page or catch-up finishes. */
   arrived: Map<number, Arrival>;
   loadTask: Promise<void> | null;
@@ -100,6 +102,7 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushAttempt = 0;
 /** Bumped by resetChat, so an answer that arrives after sign-out changes nothing. */
 let generation = 0;
+let chatUserId: string | null = null;
 let windowHooked = false;
 /** Pages that want the badges without a channel open (the Boards page, the Chat page): the socket stays up for them. */
 let watchers = 0;
@@ -248,7 +251,10 @@ function onFrame(f: Record<string, unknown>) {
       if (ch.info) ch.info = { ...ch.info, access: withReadOnly(ch.info.access, workspaceReadOnly) };
       if (!ch.visible) continue;
       sendFrame({ t: 'sub', kind: ch.kind, ref: ch.ref });
-      if (ch.loading) continue;
+      if (ch.loading) {
+        if (reconnect) ch.catchUpPending = true;
+        continue;
+      }
       if (!ch.fetchOk) void load(ch);
       else if (reconnect) void catchUp(ch);
     }
@@ -412,7 +418,10 @@ async function loadChannel(ch: Channel) {
   } finally {
     if (gen === generation) {
       ch.loading = false;
+      const catchUpPending = ch.catchUpPending;
+      ch.catchUpPending = false;
       emit(ch);
+      if (catchUpPending && ch.visible && ch.fetchOk) void catchUp(ch);
     }
   }
 }
@@ -610,7 +619,8 @@ export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
 export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): BoardChat {
   const key = keyOf(kind, ref);
   const ch: Channel = channels.get(key) ?? {
-    key, kind, ref, messages: [], next: null, info: null, lastRead: null, newAfter: null, loading: false, arrived: new Map(), loadTask: null,
+    key, kind, ref, messages: [], next: null, info: null, lastRead: null, newAfter: null, loading: false, catchUpPending: false,
+    arrived: new Map(), loadTask: null,
     catchingUp: false, loadingOlder: false,
     savedOnly: false, fetchOk: false, lost: false, error: null, visible: false, readPut: 0, readTimer: null, listeners: new Set(),
   };
@@ -816,6 +826,7 @@ export function onChatBadge(fn: () => void): () => void {
 /** Reset on sign-out or account change. An account id clears just its saved rows; no id clears the full browser cache. */
 export function resetChat(userIdToClear?: string | null): Promise<void> {
   generation++;
+  chatUserId = null;
   const ws = socket;
   socket = null;
   socketState = 'idle';
@@ -840,6 +851,7 @@ export function resetChat(userIdToClear?: string | null): Promise<void> {
     ch.info = null;
     ch.next = null;
     ch.loading = false;
+    ch.catchUpPending = false;
     ch.loadTask = null;
     ch.catchingUp = false;
     ch.arrived.clear();
@@ -863,10 +875,11 @@ export function resetChat(userIdToClear?: string | null): Promise<void> {
 
 // Signing out anywhere in the app ends chat in this tab (auth.ts deletes the saved copy), and so does another person signing in:
 // a socket the server bound to the first person's session would keep delivering their private messages to the second.
-let chatUserId: string | null = null;
 function reconnectVisibleChat() {
   if (chatAvailable() && (watchers > 0 || [...channels.values()].some((ch) => ch.visible))) connect();
 }
+
+if (typeof registerAuthChatReset === 'function') registerAuthChatReset((userId) => resetChat(userId));
 
 onAuth((state) => {
   const nextId = (state.mode === 'signed-in' || state.mode === 'offline') && state.me ? state.me.user.id : null;

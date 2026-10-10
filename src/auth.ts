@@ -29,6 +29,13 @@ let authRevision = 0;
 let authChannel: BroadcastChannel | null = null;
 let authSyncStarted = false;
 let pendingRemoteIdentity: string | null | undefined;
+let pendingChatReset: Promise<void> = Promise.resolve();
+let resetChatForAuth: ((userId: string | null) => Promise<void>) | undefined;
+
+/** Lets the chat store synchronously reset its in-memory state before auth switches identities. */
+export function registerAuthChatReset(reset: (userId: string | null) => Promise<void>) {
+  resetChatForAuth = reset;
+}
 
 export function authState(): AuthState {
   return state;
@@ -115,9 +122,9 @@ function clearIdentityMetadata() {
   void import('./board-images').then((m) => m.clearAssetCache()).catch(() => undefined);
 }
 
-function forgetUserCaches(userId: string | null) {
-  clearIdentityMetadata();
-  if (userId) void clearUserChatCache(userId).catch(() => undefined);
+function clearUserChat(userId: string): Promise<void> {
+  const clear = resetChatForAuth ? resetChatForAuth(userId) : clearUserChatCache(userId);
+  return Promise.resolve(clear).catch(() => undefined);
 }
 
 function publishIdentity(userId: string | null) {
@@ -154,7 +161,11 @@ function receiveIdentity(value: unknown) {
   if (previous === null && pendingRemoteIdentity === incoming) return;
   authRevision++;
   pendingRemoteIdentity = incoming;
-  forgetUserCaches(previous);
+  clearIdentityMetadata();
+  if (previous) {
+    const priorReset = pendingChatReset;
+    pendingChatReset = Promise.all([priorReset.catch(() => undefined), clearUserChat(previous)]).then(() => undefined);
+  }
   commit({ mode: 'unknown' });
   // The broadcast carries no profile or message data. Confirm the current session through /api/me before showing chat.
   void initAuth();
@@ -228,11 +239,12 @@ export function chatAvailable(): boolean {
  * Call it BEFORE the new identity is written.
  */
 async function prepareUserCaches(me: Me) {
+  await pendingChatReset.catch(() => undefined);
   const nextId = me.user.id;
   const previousIds = new Set([userIdOf(), cachedUserId()].filter((id): id is string => !!id && id !== nextId));
   if (previousIds.size) {
     clearIdentityMetadata();
-    await Promise.all([...previousIds].map((id) => clearUserChatCache(id).catch(() => undefined)));
+    await Promise.all([...previousIds].map((id) => clearUserChat(id)));
   }
   // On boot, remove every other account's rows before auth commits and chat can open.
   await purgeOtherUsers(nextId).catch(() => undefined);
@@ -340,14 +352,27 @@ export async function signOut(a: Pick<typeof api, 'logout'> = api): Promise<void
   }
 }
 
-export function setSignedIn(me: Me) {
+export function setSignedIn(me: Me): Promise<void> {
   authRevision++;
+  const revision = authRevision;
   pendingRemoteIdentity = undefined;
-  void prepareUserCaches(me);
-  clearGuestSession();
-  writeStorage(ME_KEY, JSON.stringify(me));
-  publishIdentity(me.user.id);
-  commit({ mode: 'signed-in', me });
+  const currentId = userIdOf();
+  const storedId = cachedUserId();
+  if (currentId === me.user.id && (!storedId || storedId === me.user.id)) {
+    clearGuestSession();
+    writeStorage(ME_KEY, JSON.stringify(me));
+    publishIdentity(me.user.id);
+    commit({ mode: 'signed-in', me });
+    return Promise.resolve();
+  }
+  return (async () => {
+    await prepareUserCaches(me);
+    if (revision !== authRevision) return;
+    clearGuestSession();
+    writeStorage(ME_KEY, JSON.stringify(me));
+    publishIdentity(me.user.id);
+    commit({ mode: 'signed-in', me });
+  })();
 }
 
 export function setGuest(guest: GuestJoin) {
