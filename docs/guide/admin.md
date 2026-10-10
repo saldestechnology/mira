@@ -117,7 +117,7 @@ For a person's own key, see [Your AI key](ai-keys.md).
 
 ## Chat
 
-The **Chat** tab appears when your server has chat turned on. Each setting is saved as soon as you change it.
+The **Chat** tab appears when chat is on. It is on by default in workspaces with sign-in, unless whoever runs your server has turned it off. Each setting is saved as soon as you change it.
 
 - **Workspace channel**: whether everyone except guests has one workspace-wide chat. Turn it off and the channel disappears from the Chat page until you turn it back on. Nothing is deleted.
 - **Viewers**: whether people with view-only access to a board may post in its chat. They can always read it.
