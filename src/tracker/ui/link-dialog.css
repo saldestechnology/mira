@@ -1,0 +1,336 @@
+/* Link mapping uses the tracker type and grid inside the app's shared tray dialog. */
+.trk.trk-link-back {
+  z-index: 22000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(16px + var(--safe-top, 0px)) calc(16px + var(--safe-right, 0px)) calc(16px + var(--safe-bottom, 0px)) calc(16px + var(--safe-left, 0px));
+}
+.trk .trk-link-modal.modal {
+  width: min(560px, 100%);
+  max-height: min(760px, calc(100dvh - 32px - var(--safe-top, 0px) - var(--safe-bottom, 0px)));
+  border: 1px solid color-mix(in srgb, var(--tray-text) 42%, var(--tray));
+  border-radius: var(--radius-lg);
+  background: var(--tray);
+  color: var(--tray-text);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tray-text) 42%, var(--tray));
+}
+.trk .trk-link-head.modal-head {
+  min-height: 72px;
+  align-items: center;
+  padding: 12px 16px 12px 20px;
+  border-bottom: 2px solid var(--tray-text);
+}
+.trk .trk-link-heading { min-width: 0; }
+.trk .trk-link-head h2 {
+  margin: 0;
+  color: var(--tray-text);
+  font: 700 19px/1.25 var(--ui, 'Instrument Sans', ui-sans-serif, system-ui, sans-serif);
+  letter-spacing: 0;
+}
+.trk .trk-link-kanban-name {
+  max-width: min(420px, calc(100vw - 110px));
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--tray-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+.trk .trk-link-close {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  color: var(--tray-text);
+}
+.trk .trk-link-close-mark { font: 400 24px/1 var(--ui, sans-serif); }
+.trk .trk-link-body.modal-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  color: var(--tray-text);
+}
+.trk .trk-link-steps {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 18px;
+  min-height: 56px;
+  margin: 0;
+  padding: 8px 20px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tray-text) 32%, var(--tray));
+  list-style: none;
+}
+.trk .trk-link-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--tray-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.trk .trk-link-steps li.is-current { color: var(--tray-text); }
+.trk .trk-link-step-number {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--tray-text) 46%, var(--tray));
+  border-radius: var(--radius-xs);
+  color: var(--tray-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.trk .trk-link-steps .is-current .trk-link-step-number {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: var(--on-signal);
+}
+.trk .trk-link-steps .is-complete .trk-link-step-number { border-color: var(--tray-text); }
+.trk .trk-link-pane {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 14px 20px 18px;
+  overscroll-behavior: contain;
+}
+.trk .trk-link-intro {
+  margin: 0 0 6px;
+  color: var(--tray-muted);
+  font-size: 13px;
+}
+.trk .trk-link-lanes { border-top: 1px solid color-mix(in srgb, var(--tray-text) 34%, var(--tray)); }
+.trk .trk-link-lane-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 42%);
+  align-items: center;
+  gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--tray-text) 28%, var(--tray));
+}
+.trk .trk-link-lane-copy { min-width: 0; }
+.trk .trk-link-lane-title {
+  overflow-wrap: anywhere;
+  color: var(--tray-text);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.trk .trk-link-lane-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--tray-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.trk .trk-link-lane-markers { display: inline-flex; min-width: 0; flex-wrap: wrap; gap: 6px; }
+.trk .trk-link-suggested, .trk .trk-link-check-this, .trk .trk-link-not-linked {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--tray-text) 38%, var(--tray));
+  border-radius: var(--radius-xs);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.trk .trk-link-suggested { color: var(--tray-muted); }
+.trk .trk-link-check-this { border-color: var(--signal); color: var(--signal); }
+.trk .trk-link-not-linked { border-style: dashed; color: var(--tray-muted); }
+.trk .trk-link-state-picker {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid color-mix(in srgb, var(--tray-text) 62%, var(--tray));
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--tray-text);
+  text-align: left;
+}
+.trk .trk-link-state-picker:hover, .trk .trk-link-state-picker[aria-expanded='true'] { background: var(--tray-hover); }
+.trk .trk-link-state-picker:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.trk .trk-link-state-picker .trk-glyph { width: 16px; height: 16px; color: var(--tray-text); }
+.trk .trk-link-state-label { min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
+.trk .trk-link-chevron { flex: none; color: var(--tray-muted); font-size: 17px; line-height: 1; }
+.trk .trk-link-lane-error {
+  grid-column: 1 / -1;
+  margin: -4px 0 0;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+.trk .trk-link-warnings {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+  padding: 3px 0 3px 11px;
+  border-left: 3px solid var(--signal);
+}
+.trk .trk-link-warning { display: flex; align-items: flex-start; gap: 8px; margin: 0; color: var(--tray-text); font-size: 12px; }
+.trk .trk-link-warning-glyph {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--signal);
+  border-radius: 50%;
+  color: var(--signal);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.trk .trk-link-footer {
+  display: grid;
+  flex: none;
+  gap: 10px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--tray-text) 32%, var(--tray));
+}
+.trk .trk-link-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.trk .trk-link-actions .btn, .trk .trk-link-retry {
+  min-width: 92px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--tray-text) 62%, var(--tray));
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--tray-text);
+  font-weight: 650;
+}
+.trk .trk-link-actions .btn.primary {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: var(--on-signal);
+}
+.trk .trk-link-actions .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 86%, var(--tray-text)); }
+.trk .trk-link-actions .btn:focus-visible, .trk .trk-link-retry:focus-visible, .trk .trk-link-close:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}
+.trk .trk-link-actions .btn:disabled {
+  opacity: 1;
+  background: var(--tray);
+  border-color: color-mix(in srgb, var(--tray-text) 62%, var(--tray));
+  color: var(--tray-text);
+  cursor: default;
+}
+.trk .trk-link-review-summary { margin-bottom: 14px; }
+.trk .trk-link-review-title { margin: 0; color: var(--tray-text); font-size: 17px; font-weight: 700; line-height: 1.35; }
+.trk .trk-link-review-copy { margin: 5px 0 0; color: var(--tray-muted); font-size: 13px; }
+.trk .trk-link-review-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.trk .trk-link-review-table caption { padding: 0 0 7px; color: var(--tray-muted); font-size: 11px; text-align: left; }
+.trk .trk-link-review-table th, .trk .trk-link-review-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tray-text) 30%, var(--tray));
+  color: var(--tray-text);
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.trk .trk-link-review-table th:first-child { width: 38%; }
+.trk .trk-link-review-table th:last-child, .trk .trk-link-review-table td:last-child { width: 52px; text-align: right; }
+.trk .trk-link-review-table thead th { color: var(--tray-muted); font-size: 10px; font-weight: 700; }
+.trk .trk-link-review-table tbody th { font-weight: 600; }
+.trk .trk-link-create-option {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--tray-text) 32%, var(--tray));
+}
+.trk .trk-link-create-label {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  color: var(--tray-text);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.trk .trk-link-create-label input {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  margin: 0;
+  accent-color: var(--signal);
+}
+.trk .trk-link-create-label:focus-within { outline: 2px solid var(--signal); outline-offset: 2px; }
+.trk .trk-link-helper { margin: 0 0 0 30px; color: var(--tray-muted); font-size: 12px; }
+.trk .trk-link-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger) 12%, var(--tray));
+  color: var(--tray-text);
+}
+.trk .trk-link-error p { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
+.trk .trk-link-retry { min-width: 74px; min-height: 44px; flex: none; padding: 6px 10px; font-size: 12px; }
+.trk.trk-pop {
+  z-index: 22001;
+  --trk-ground: var(--tray);
+  --trk-text: var(--tray-text);
+  --trk-muted: var(--tray-muted);
+  border: 1px solid color-mix(in srgb, var(--tray-text) 42%, var(--tray));
+  background: var(--tray);
+  color: var(--tray-text);
+}
+.trk.trk-pop .trk-picker-option:hover, .trk.trk-pop .trk-picker-option.active { background: var(--tray-hover); }
+.trk.trk-pop .trk-picker-option[aria-disabled='true'] { color: var(--tray-muted); }
+.trk.trk-pop .trk-picker-search { border-color: color-mix(in srgb, var(--tray-text) 52%, var(--tray)); }
+.trk.trk-pop .trk-picker-option { min-height: 44px; }
+.trk .trk-link-picker-use { margin-left: auto; color: var(--tray-muted); font-size: 11px; text-align: right; }
+.trk.trk-pop .trk-link-picker-use { font-size: 10px; }
+.trk.trk-pop .trk-link-state-glyph { width: 16px; height: 16px; flex: none; }
+.trk .trk-link-modal :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .trk.trk-link-back { align-items: flex-end; padding: var(--safe-top, env(safe-area-inset-top, 0px)) 0 0; }
+  .trk .trk-link-modal.modal {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - var(--safe-top, env(safe-area-inset-top, 0px)));
+    margin: 0;
+    padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .trk .trk-link-head.modal-head { min-height: 68px; padding: 10px 12px 10px 16px; }
+  .trk .trk-link-steps { min-height: 52px; padding-inline: 16px; }
+  .trk .trk-link-pane { padding: 12px 16px 14px; }
+  .trk .trk-link-lane-row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px 0; }
+  .trk .trk-link-state-picker { width: 100%; }
+  .trk .trk-link-footer { padding: 10px 16px 14px; }
+  .trk .trk-link-actions { justify-content: stretch; }
+  .trk .trk-link-actions .btn { min-width: 0; flex: 1 1 0; }
+  .trk .trk-link-review-table th, .trk .trk-link-review-table td { padding-inline: 4px; }
+  .trk .trk-link-review-table th:first-child { width: 34%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trk .trk-link-modal *, .trk .trk-link-modal *::before, .trk .trk-link-modal *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}
+@media (forced-colors: active) {
+  .trk .trk-link-modal, .trk .trk-link-state-picker, .trk .trk-link-actions .btn { border-color: CanvasText; }
+  .trk .trk-link-modal :focus-visible { outline-color: Highlight; }
+  .trk .trk-link-check-this, .trk .trk-link-warning-glyph { border-color: Highlight; color: CanvasText; }
+}

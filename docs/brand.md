@@ -328,6 +328,17 @@ AVOID: <SPECIFIC AVOIDS: colour, other objects, borders, frames, shadows on the 
 3. Export WebP: `cwebp -q 85 -alpha_q 100 -resize <2× the displayed CSS width> 0 in.png -o out.webp`. Keep each image under 250 KB (a hero under 350 KB).
 4. In the page: `width` and `height` attributes, `alt=""` and `aria-hidden="true"` for decoration, `loading="lazy"` below the fold, `decoding="async"`.
 
+## Provenance of the app icons
+
+Recorded 2026-10-11 for the licence audit.
+
+| File | Made by | Licence | Third-party material |
+|---|---|---|---|
+| `public/favicon.svg` | The project's own design work: a hand-written SVG of three primitives (a rounded dark square, a signal-yellow bar, three light lines). It is in the initial commit (1d05edf, 2026-10-08, committed by Johan's account). It is not traced from, or derived from, any third-party artwork or icon set. | Part of the app, so AGPL-3.0 like the rest of the repository. The name, the wordmark and the monograms stay reserved (see `design/brand/assets/LICENSE.md`); this favicon is the app's interim mark, not one of the four monogram options. | None |
+| `desktop/src-tauri/icons/*` (`32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.png`, `icon.icns`, `icon.ico`) | Generated from `public/favicon.svg` for the Tauri desktop shell (`docs/desktop.md`, TAB-100; added in eb5aebe). | Same as the favicon: our own work, AGPL-3.0. | None |
+
+Neither set contains CC BY 4.0 brand art or any third-party image, so no notice entry is needed for them. When Johan picks a monogram (First look, question B) the favicon and these icons are redrawn from that monogram, and this table is updated: the monogram is brand art, with the name and wordmark reserved.
+
 ## Voice
 
 Headlines follow one pattern: **a plain statement, then an italic turn.** "Paste your thinking *together.*" "One board, *no edges.*" "Run the room, *not the tool.*" "Yours first. *Then everyone's.*" "Start a board. *Cut the rest.*"

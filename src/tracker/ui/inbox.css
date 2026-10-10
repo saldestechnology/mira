@@ -82,8 +82,10 @@
 .trk .trk-prefs-skeleton-row span:first-child { width: min(160px, 100%); }
 .trk .trk-prefs-skeleton-row span:last-child { width: min(100%, 340px); height: 30px; }
 @container (max-width: 719px) {
-  .trk .trk-inbox-row { grid-template-columns: 12px auto 16px minmax(0, 1fr) auto auto; gap: 7px; min-height: 44px; }
-  .trk .trk-inbox-reason { display: none; }
+  .trk .trk-inbox-row { grid-template-columns: 12px auto 16px minmax(0, 1fr) auto auto; gap: 7px; min-height: 52px; }
+  /* The reason is what tells two notices on one ticket apart ("Olive assigned you", "Olive mentioned you"): it stays on a
+     second line under the title on a phone, cut with an ellipsis when it is long. */
+  .trk .trk-inbox-reason { display: block; }
   .trk .trk-inbox-row .trk-relative-time { white-space: nowrap; }
   .trk .trk-inbox-button, .trk .trk-inbox-load-more, .trk .trk-inbox-retry, .trk .trk-prefs-retry { min-height: 44px; }
   .trk .trk-prefs-radio { min-height: 44px; }

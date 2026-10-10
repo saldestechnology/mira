@@ -98,7 +98,7 @@
 .trk.tk-page .tk-progress-track { height: 5px; overflow: hidden; background: var(--rule); }
 .trk.tk-page .tk-progress-track span { display: block; height: 100%; background: var(--signal); }
 .trk.tk-page .tk-link-glyph { width: 20px; text-align: center; font-size: 18px; }
-.trk.tk-page .tk-external-link { color: var(--signal); text-decoration: underline; text-underline-offset: 2px; }
+.trk.tk-page .tk-external-link { color: var(--ink); text-decoration: underline; text-decoration-color: var(--signal); text-underline-offset: 2px; }
 .trk.tk-page .tk-relation-search { display: grid; gap: 7px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
 .trk.tk-page .tk-relation-result { justify-content: flex-start; width: 100%; }
 .trk.tk-page .tk-activity-list { display: grid; gap: 0; max-height: 460px; overflow: auto; overscroll-behavior: contain; border-bottom: 1px solid var(--rule); }
@@ -110,7 +110,7 @@
 .trk.tk-page .tk-comment-head { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 7px; font-size: 13px; }
 .trk.tk-page .tk-comment-head .trk-avatar, .trk.tk-page .tk-comment-head .trk-actor-badge { width: 28px; height: 28px; border-radius: 0; }
 .trk.tk-page .tk-comment-body { font-size: 14px; }
-.trk.tk-page .tk-comment-row.pending { opacity: .72; }
+.trk.tk-page .tk-comment-row.pending { border-inline-start: 1px dashed var(--ink); padding-inline-start: 10px; }
 .trk.tk-page .tk-history-text { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
 .trk.tk-page .tk-event-icon { display: inline-grid; width: 20px; height: 20px; flex: none; place-items: center; color: var(--graphite); }
 .trk.tk-page .tk-deleted-comment { color: var(--graphite); font-style: italic; }
@@ -118,7 +118,7 @@
 .trk.tk-page-gallery-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr); align-items: start; gap: 16px; }
 .trk.tk-page-gallery-grid > .trk.tk-page { min-height: 500px; padding: 12px; border: 1px solid var(--rule); }
 .trk.tk-page-state-gallery { display: grid; gap: 14px; align-content: start; }
-.trk.tk-page .tk-new-comments { align-self: start; margin-top: 8px; border-color: var(--signal); color: var(--signal); }
+.trk.tk-page .tk-new-comments { align-self: start; margin-top: 8px; border-color: var(--signal); color: var(--ink); }
 .trk.tk-page .tk-load-older { align-self: start; width: fit-content; margin-bottom: 6px; border-color: var(--rule); }
 .trk.tk-page .tk-error-inline { margin: 6px 0; color: var(--danger); font-size: 13px; }
 .trk.tk-page .tk-state-screen { display: grid; min-height: 50vh; align-content: center; justify-items: start; gap: 8px; max-width: 560px; margin: auto; }

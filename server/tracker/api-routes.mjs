@@ -1,7 +1,7 @@
 import { ticketAccess } from './access.mjs';
 import { OpsError, actorInfo, newId } from './shared.mjs';
 import {
-  addTicketRowExtras, commentTicket, createLabel, createTicket, deleteTicketComment, editTicketComment,
+  addTicketRowExtras, commentTicket, createLabel, createTicket, deleteTicketComment, editTicketComment, findTicketByIdempotency,
   getTicket, listLabels, listStates, listTickets, searchTickets, transitionTicket, updateTicket,
 } from './tickets.mjs';
 import { isSubscribed, subscribeTicket, unsubscribeTicket } from './subscriptions.mjs';
@@ -537,9 +537,13 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
     const limit = positiveLimit(query);
     const cursor = querySingle(query, 'cursor') ?? null;
     const options = { directory, actor, filters: query.getAll('filter'), limit, cursor, now: now() };
-    const result = rawQuery === undefined
-      ? listTickets(options)
-      : searchTickets({ ...options, query: rawQuery });
+    let result;
+    try {
+      result = rawQuery === undefined ? listTickets(options) : searchTickets({ ...options, query: rawQuery });
+    } catch (error) {
+      if (error instanceof OpsError && error.path === 'query') error.path = 'q';
+      throw error;
+    }
       return [200, { tickets: pageWithExtras(directory, result.entries), nextCursor: result.next }];
   }));
 
@@ -550,10 +554,11 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
     }
     const input = normalizeAssignee(directory, body);
     const ticket = directory.transaction(() => {
+      const replay = findTicketByIdempotency({ directory, actor: actorFor(user), idempotencyKey: body.idempotencyKey, source: 'api' });
       const created = createTicket({
         ...input, directory, actor: actorFor(user), source: 'api', readOnly: currentReadOnly, now: now(),
       });
-      audit(user, 'tracker.ticket.create', { ticketId: created.id });
+      if (!replay) audit(user, 'tracker.ticket.create', { ticketId: created.id });
       return pageWithExtras(directory, [created])[0];
     });
     return [201, { ticket }];
@@ -630,7 +635,7 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
     const result = withCurrentTicketOnConflict(directory, actor, key, () => directory.transaction(() => {
       const comment = commentTicket({ directory, actor, key, body: body.body, clientId: body.clientId, source: 'api', readOnly: currentReadOnly, now: now() });
       const ticket = getTicket({ directory, actor, key });
-      audit(user, 'tracker.ticket.comment', { ticketId: ticket.id, commentId: comment.id });
+      if (!comment.replayed) audit(user, 'tracker.ticket.comment', { ticketId: ticket.id, commentId: comment.id });
       return {
         comment: commentView({
           id: comment.id, author: comment.author, body: comment.body, createdAt: comment.createdAt,

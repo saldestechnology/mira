@@ -21,7 +21,7 @@ To start with a ready-made layout instead, choose **Start from a template**. See
 ## The screen
 
 - **Top left.** The **All boards** button (house icon) returns to the Boards page. Next to it are the board name and the sync status. A **View only** or **Can comment** badge appears here when you cannot edit the board.
-- **Top right.** The people on the board (round avatars), the comments button, **Share**, and the **Menu** button (three dots).
+- **Top right.** The people on the board (round avatars in one row, as many as fit; a **+N** badge counts the rest), the comments button, **Share**, and the **Menu** button (three dots).
 - **Left toolbar.** The tools, listed below.
 - **Bottom right.** Zoom out, the zoom level, zoom in, **Fit board**, and a minimap toggle.
 - **Bottom.** The session bar for facilitated sessions. See [Sessions and focus requests](sessions.md).

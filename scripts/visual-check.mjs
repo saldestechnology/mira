@@ -33,7 +33,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
   --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
-                     mode kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
+                     mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
                      kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, image-placeholders, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
@@ -1037,6 +1037,92 @@ async function assertTrackerLayout(page) {
   if (result.failures.length) throw new Error(`tracker layout: ${result.failures.join('; ')}`);
 }
 
+async function addTrackerContrastProbe(page, kind) {
+  return page.evaluate((probeKind) => {
+    if (probeKind === 'ticket') {
+      const root = document.querySelector('.tk-page');
+      const host = root?.querySelector('.tk-title-section');
+      if (!root || !host) return 'ticket page title section is missing';
+      const sample = document.createElement('div');
+      sample.className = 'tk-contrast-review';
+      const externalLink = document.createElement('a');
+      externalLink.className = 'tk-external-link';
+      externalLink.href = 'https://example.test/review/1';
+      externalLink.textContent = 'Open pull request';
+      const newComments = document.createElement('button');
+      newComments.className = 'tk-new-comments';
+      newComments.type = 'button';
+      newComments.textContent = 'New comments';
+      const externalLinkLine = document.createElement('div');
+      externalLinkLine.append(externalLink);
+      const newCommentsLine = document.createElement('div');
+      newCommentsLine.append(newComments);
+      const pending = document.createElement('article');
+      pending.className = 'tk-comment-row pending';
+      const timestamp = document.createElement('time');
+      timestamp.className = 'trk-relative-time';
+      timestamp.textContent = 'Sending…';
+      pending.append(timestamp);
+      sample.append(externalLinkLine, newCommentsLine, pending);
+      host.append(sample);
+      return null;
+    }
+    const root = document.querySelector('.trk-new-issue');
+    if (!root) return 'new issue form is missing';
+    const error = document.createElement('p');
+    error.className = 'trk-inline-error';
+    error.setAttribute('role', 'alert');
+    error.textContent = 'Could not create the issue. Try again.';
+    const reason = document.createElement('span');
+    reason.className = 'trk-create-reason';
+    reason.textContent = 'Needs a connection to get a ticket number.';
+    root.prepend(error, reason);
+    return null;
+  }, kind);
+}
+
+async function assertComputedTextContrast(page, name, selectors) {
+  const result = await page.evaluate((requested) => {
+    const parseColor = (value) => {
+      const match = value.match(/rgba?\(([^)]+)\)/i);
+      if (!match) return null;
+      const values = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
+      if (values.length < 3 || values.slice(0, 3).some((part) => !Number.isFinite(part))) return null;
+      return [values[0], values[1], values[2], values.length > 3 && Number.isFinite(values[3]) ? values[3] : 1];
+    };
+    const luminance = ([r, g, b]) => {
+      const linear = (channel) => { const value = channel / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; };
+      return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+    };
+    const background = (element) => {
+      for (let at = element; at; at = at.parentElement) {
+        const parsed = parseColor(getComputedStyle(at).backgroundColor);
+        if (parsed && parsed[3] >= 0.99) return parsed;
+      }
+      return parseColor(getComputedStyle(document.documentElement).backgroundColor) ?? [255, 255, 255, 1];
+    };
+    const failures = [];
+    const ratios = [];
+    for (const selector of requested) {
+      const elements = [...document.querySelectorAll(selector)].filter((element) => element.getClientRects().length);
+      if (!elements.length) { failures.push(`no visible element matched ${selector}`); continue; }
+      for (const element of elements) {
+        const foreground = parseColor(getComputedStyle(element).color);
+        if (!foreground) { failures.push(`no computed text color for ${selector}`); continue; }
+        const bg = background(element);
+        const ratio = (Math.max(luminance(foreground), luminance(bg)) + 0.05) / (Math.min(luminance(foreground), luminance(bg)) + 0.05);
+        ratios.push({ selector, ratio: Number(ratio.toFixed(2)) });
+        if (ratio < 4.5) failures.push(`${selector} is ${ratio.toFixed(2)}:1`);
+      }
+    }
+    const pending = document.querySelector('.tk-comment-row.pending');
+    if (pending && Number.parseFloat(getComputedStyle(pending).opacity) !== 1) failures.push('pending comment row applies opacity to its timestamp');
+    return { failures, ratios };
+  }, selectors);
+  console.log(`${name}: computed contrast ${JSON.stringify(result.ratios)}`);
+  if (result.failures.length) throw new Error(`${name}: ${result.failures.join('; ')}`);
+}
+
 const STATES = {
   async 'tracker-fullscreen'({ page, base }) {
     await page.goto(`${base}/?debug&trackerMock=1#/t/all`);
@@ -1176,6 +1262,9 @@ const STATES = {
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
     await page.locator('.trk-new-preview:not([hidden])').waitFor();
     if (await page.locator('.trk-new-preview script').count()) throw new Error('tracker-new-issue: preview inserted an executable script node');
+    const probeError = await addTrackerContrastProbe(page, 'new-issue');
+    if (probeError) throw new Error(`tracker-new-issue: ${probeError}`);
+    await assertComputedTextContrast(page, 'tracker-new-issue', ['.trk-new-issue .trk-inline-error', '.trk-new-issue .trk-create-reason']);
     return { noPark: true };
   },
   async 'tracker-phone'({ page, base, width }) {
@@ -1380,8 +1469,10 @@ const STATES = {
   async 'tracker-inbox-narrow'({ page, base }) {
     await page.goto(`${base}/?debug=tracker-foundation&inbox=narrow`);
     await page.locator('.trk-inbox-row').nth(6).waitFor();
-    const reason = page.locator('.trk-inbox-reason').first();
-    if (await reason.isVisible()) throw new Error('tracker inbox reason text should be hidden below 720px');
+    // The reason line is what tells two notices on one ticket apart ("assigned you" / "mentioned you"), so a phone keeps it.
+    const reasons = await page.locator('.trk-inbox-reason').evaluateAll((els) => els.map((el) => ({ shown: el.getBoundingClientRect().height > 0 && getComputedStyle(el).display !== 'none', text: el.textContent.trim() })));
+    if (reasons.length < 3 || reasons.some((r) => !r.shown || !r.text)) throw new Error(`tracker inbox reason line should show below 720px: ${JSON.stringify(reasons.slice(0, 4))}`);
+    if (new Set(reasons.map((r) => r.text)).size < 3) throw new Error('tracker inbox reason lines should differ between kinds of notice');
   },
   async 'tracker-notification-prefs'({ page, base }) {
     await page.goto(`${base}/?debug=tracker-foundation&inbox=prefs`);
@@ -2743,6 +2834,177 @@ const STATES = {
     console.log(`top-bars-320 ${JSON.stringify(result)}`);
     if (result.failures.length) throw new Error(`top-bars-320: ${JSON.stringify(result.failures)}`);
   },
+  // CDX-21: six people should never push the presence cluster beneath the left tool rail on a phone.
+  async 'presence-avatars-many'(env) {
+    await openSeedBoard(env);
+    await env.page.locator('.comment-count.show').waitFor();
+    await env.page.locator('.top-right .btn.primary').waitFor();
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      const self = app.participants().find((person) => person.isMe);
+      if (!self) throw new Error('presence-avatars-many: current user is missing');
+      const others = [
+        { clientId: 71001, user: { id: 'visual-person-1', name: 'Nia', color: '#D64545' }, isMe: false },
+        { clientId: 71002, user: { id: 'visual-person-2', name: 'Guest', color: '#4977D1', guest: true }, isMe: false },
+        { clientId: 71003, user: { id: 'visual-person-3', name: 'Milo', color: '#177D68' }, isMe: false },
+        { clientId: 71004, user: { id: 'visual-person-4', name: 'Ari', color: '#A13BA5' }, isMe: false },
+        { clientId: 71005, user: { id: 'visual-person-5', name: 'Sol', color: '#A95C00' }, isMe: false },
+        ...Array.from({ length: 6 }, (_, index) => ({ clientId: 71006 + index, user: { id: `visual-person-${index + 6}`, name: `Person ${index + 6}`, color: '#A95C00' }, isMe: false })),
+      ];
+      app.participants = () => [...others.slice(0, 4), self];
+      app.emit('presence');
+    });
+    await env.page.waitForFunction(() => document.querySelectorAll('.people .avatar').length >= 2);
+    const result = await env.page.evaluate(() => {
+      const app = window.__board;
+      const self = app.participants().find((person) => person.isMe);
+      if (!self) throw new Error('presence-avatars-many: current user is missing after seeding');
+      const others = [
+        { clientId: 71001, user: { id: 'visual-person-1', name: 'Nia', color: '#D64545' }, isMe: false },
+        { clientId: 71002, user: { id: 'visual-person-2', name: 'Guest', color: '#4977D1', guest: true }, isMe: false },
+        { clientId: 71003, user: { id: 'visual-person-3', name: 'Milo', color: '#177D68' }, isMe: false },
+        { clientId: 71004, user: { id: 'visual-person-4', name: 'Ari', color: '#A13BA5' }, isMe: false },
+        { clientId: 71005, user: { id: 'visual-person-5', name: 'Sol', color: '#A95C00' }, isMe: false },
+        ...Array.from({ length: 6 }, (_, index) => ({ clientId: 71006 + index, user: { id: `visual-person-${index + 6}`, name: `Person ${index + 6}`, color: '#A95C00' }, isMe: false })),
+      ];
+      const people = document.querySelector('.people');
+      const topRight = document.querySelector('.top-right');
+      const topLeft = document.querySelector('.top-left');
+      const rail = document.querySelector('.rail');
+      if (!people || !topRight || !topLeft || !rail) return { failures: ['people, top bars, or tool rail are missing'] };
+      const box = (element) => element.getBoundingClientRect();
+      const rgb = (value) => {
+        const match = value.match(/rgba?\(([^)]+)\)/i);
+        if (!match) return null;
+        const channels = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
+        return channels.length >= 3 && channels.slice(0, 3).every(Number.isFinite) ? channels.slice(0, 3) : null;
+      };
+      const luminance = ([r, g, b]) => {
+        const linear = (channel) => { const value = channel / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; };
+        return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+      };
+      const baseLimit = innerWidth < 380 ? 1 : innerWidth < 480 ? 2 : 3;
+      const scenarios = [];
+      const failures = [];
+      const badge = topRight.querySelector('.comment-count.show');
+      const commentButton = topRight.querySelector('.comment-toggle');
+      const nextControl = commentButton?.nextElementSibling;
+      const share = topRight.querySelector('.btn.primary');
+      let badgeGeometry = null;
+      if (!badge || !nextControl || !share) {
+        failures.push('visible comments badge, next control, or Share button is missing');
+      } else {
+        const trayBefore = box(topRight);
+        const shareBox = box(share);
+        const nextBox = box(nextControl);
+        badge.style.right = '-4px';
+        const currentBadge = box(badge);
+        const currentNextGap = nextBox.left - currentBadge.right;
+        const currentTray = box(topRight);
+        badge.style.removeProperty('right');
+        const insetBadge = box(badge);
+        const insetShareGap = shareBox.left - insetBadge.right;
+        const insetNextGap = nextBox.left - insetBadge.right;
+        const insetTray = box(topRight);
+        const position = getComputedStyle(badge).position;
+        if (position !== 'absolute') failures.push(`comments badge position is ${position}, expected absolute`);
+        if (insetNextGap - currentNextGap < 1.9) failures.push(`comments badge gained only ${(insetNextGap - currentNextGap).toFixed(1)}px of clearance from the next control, expected at least 2px`);
+        if (insetNextGap < 1.9) failures.push(`comments badge is only ${insetNextGap.toFixed(1)}px from the next control, expected at least 2px clearance`);
+        if (insetShareGap < 1.9) failures.push(`comments badge is only ${insetShareGap.toFixed(1)}px from Share, expected at least 2px clearance`);
+        if (Math.abs(currentTray.width - insetTray.width) > 0.5 || Math.abs(currentTray.height - insetTray.height) > 0.5 || Math.abs(trayBefore.width - insetTray.width) > 0.5 || Math.abs(trayBefore.height - insetTray.height) > 0.5) {
+          failures.push('comments badge position changed the top-right tray dimensions');
+        }
+        badgeGeometry = { currentNextGap: Number(currentNextGap.toFixed(1)), insetNextGap: Number(insetNextGap.toFixed(1)), insetShareGap: Number(insetShareGap.toFixed(1)), tray: { width: Number(insetTray.width.toFixed(1)), height: Number(insetTray.height.toFixed(1)) } };
+      }
+      const sixAvatarCandidateFits = () => {
+        const candidate = topRight.cloneNode(true);
+        const candidatePeople = candidate.querySelector('.people');
+        const avatar = candidatePeople?.querySelector('.avatar:not(.more)');
+        if (!candidatePeople || !avatar) return false;
+        const more = document.createElement('span');
+        more.className = 'avatar more';
+        more.textContent = '+6';
+        candidatePeople.replaceChildren(...Array.from({ length: 6 }, () => avatar.cloneNode(true)), more);
+        Object.assign(candidate.style, { position: 'fixed', top: '0px', left: '-10000px', right: 'auto', width: 'max-content', maxWidth: 'none', visibility: 'hidden' });
+        topRight.parentElement.append(candidate);
+        const candidateWidth = box(candidate).width;
+        candidate.remove();
+        const chromeStyle = getComputedStyle(topRight.parentElement);
+        const safeLeft = Number.parseFloat(chromeStyle.getPropertyValue('--safe-left')) || 0;
+        const safeRight = Number.parseFloat(chromeStyle.getPropertyValue('--safe-right')) || 0;
+        return candidateWidth <= innerWidth - 24 - safeLeft - safeRight + 1;
+      };
+      const fitsSix = sixAvatarCandidateFits();
+      for (const total of [5, 6, 7]) {
+        app.participants = () => [...others.slice(0, total - 1), self];
+        app.emit('presence');
+        const bar = box(topRight), left = box(topLeft), tools = box(rail);
+        const avatars = [...people.querySelectorAll('.avatar:not(.more)')];
+        const more = people.querySelector('.avatar.more');
+        const cluster = box(people);
+        const visibleLimit = innerWidth < 480 ? baseLimit : fitsSix ? 6 : 3;
+        const expectedVisible = Math.min(total, visibleLimit);
+        const remaining = Math.max(0, total - visibleLimit);
+        let chipContrast;
+        let avatarBadgeClearance;
+        const topRightChildren = [...topRight.children].map(box);
+        const rowCenters = topRightChildren.map((rect) => rect.top + rect.height / 2);
+        const avatarCenters = avatars.map((avatar) => {
+          const rect = box(avatar);
+          return rect.top + rect.height / 2;
+        });
+        if (avatars.length !== expectedVisible) failures.push(`${total} participants: expected ${expectedVisible} visible avatars, got ${avatars.length}`);
+        if (!avatars[0]?.getAttribute('aria-label')?.includes('(you)')) failures.push(`${total} participants: the viewer own avatar is not first and visible`);
+        if (expectedVisible >= 3 && !avatars[2]?.querySelector('.avatar-guest')) failures.push(`${total} participants: the visible guest avatar is missing its Guest badge`);
+        if (remaining > 0 && more?.textContent?.trim() !== `+${remaining}`) failures.push(`${total} participants: expected a +${remaining} remainder chip, got ${more?.textContent?.trim() ?? 'none'}`);
+        if (remaining > 0 && more?.getAttribute('aria-label') !== `${remaining} more people here`) failures.push(`${total} participants: remainder chip has the wrong accessible name`);
+        if (remaining > 0 && more) {
+          const chip = box(more);
+          if (Math.abs(chip.width - 30) > 0.5 || Math.abs(chip.height - 30) > 0.5) failures.push(`${total} participants: +N chip is ${Math.round(chip.width)}x${Math.round(chip.height)}, expected 30x30`);
+          const foreground = rgb(getComputedStyle(more).color);
+          const background = rgb(getComputedStyle(more).backgroundColor);
+          if (!foreground || !background) {
+            failures.push(`${total} participants: +N chip colors could not be measured`);
+          } else {
+            const foregroundLuminance = luminance(foreground), backgroundLuminance = luminance(background);
+            const contrast = (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+            if (contrast < 4.5) failures.push(`${total} participants: +N chip contrast is ${contrast.toFixed(2)}:1, expected at least 4.5:1`);
+            chipContrast = Number(contrast.toFixed(2));
+          }
+          if (total === 7 && badge) {
+            const badgeBox = box(badge);
+            const overlaps = badgeBox.left < chip.right && badgeBox.right > chip.left && badgeBox.top < chip.bottom && badgeBox.bottom > chip.top;
+            avatarBadgeClearance = badgeBox.left >= chip.right ? badgeBox.left - chip.right : badgeBox.right <= chip.left ? chip.left - badgeBox.right : 0;
+            if ([390, 1280].includes(innerWidth) && overlaps) failures.push(`${total} participants: comments badge overlaps the +N avatar chip at ${innerWidth}px`);
+          }
+        }
+        if (remaining === 0 && more) failures.push(`${total} participants: no remainder is expected`);
+        if (rowCenters.length && Math.max(...rowCenters) - Math.min(...rowCenters) > 1.5) failures.push(`${total} participants: right tray children wrap onto multiple rows`);
+        if (avatarCenters.length && Math.max(...avatarCenters) - Math.min(...avatarCenters) > 1.5) failures.push(`${total} participants: participant avatars are not on one row`);
+        if (bar.left < 0 || bar.right > innerWidth) failures.push('right-hand top bar extends outside the viewport');
+        if (bar.left < left.right && bar.right > left.left && bar.top < left.bottom && bar.bottom > left.top) failures.push('right-hand top bar overlaps the left top-bar rectangle');
+        if (innerWidth <= 860 && bar.top - left.bottom < 7.5) failures.push(`phone bars have only ${Math.round(bar.top - left.bottom)}px vertical clearance, expected 8px`);
+        if (tools.top < bar.bottom + 7.5) failures.push(`tool rail starts ${Math.round(bar.bottom - tools.top)}px before the tray clears it by 8px`);
+        if (cluster.left < bar.left - 0.5 || cluster.right > bar.right + 0.5) failures.push(`${total} participants: presence cluster is outside the right tray`);
+        scenarios.push({ total, visibleAvatars: avatars.length, remainder: remaining, ...(chipContrast === undefined ? {} : { chipContrast }), ...(avatarBadgeClearance === undefined ? {} : { avatarBadgeClearance: Number(avatarBadgeClearance.toFixed(1)) }), cluster: { left: Math.round(cluster.left), right: Math.round(cluster.right) } });
+      }
+      const finalBar = box(topRight), finalLeft = box(topLeft), finalTools = box(rail);
+      return {
+        failures,
+        viewport: `${innerWidth}x${innerHeight}`,
+        sixAvatarCandidateFits: fitsSix,
+        participantScenarios: scenarios,
+        badgeGeometry,
+        railTop: Math.round(finalTools.top),
+        topRight: { left: Math.round(finalBar.left), right: Math.round(finalBar.right) },
+        topLeft: { left: Math.round(finalLeft.left), right: Math.round(finalLeft.right), top: Math.round(finalLeft.top), bottom: Math.round(finalLeft.bottom) },
+        tray: { left: Math.round(finalBar.left), right: Math.round(finalBar.right), top: Math.round(finalBar.top), bottom: Math.round(finalBar.bottom) },
+      };
+    });
+    await env.page.waitForTimeout(900);
+    console.log(`presence-avatars-many ${JSON.stringify(result)}`);
+    if (result.failures.length) throw new Error(`presence-avatars-many: ${JSON.stringify(result.failures)}`);
+  },
   async 'press-board'(env) {
     await openSeedBoard(env);
     await pressZoom(env.page, 1.5);
@@ -3083,6 +3345,12 @@ const STATES = {
     await openTrackerMockShell(page, base);
     await page.locator('.trk-title-link').first().click();
     await page.waitForTimeout(1200);
+    const probeError = await addTrackerContrastProbe(page, 'ticket');
+    if (probeError) throw new Error(`review-ticket-page: ${probeError}`);
+    await assertComputedTextContrast(page, 'review-ticket-page', [
+      '.tk-contrast-review .tk-external-link', '.tk-contrast-review .tk-new-comments',
+      '.tk-contrast-review .tk-comment-row.pending .trk-relative-time',
+    ]);
   },
   async 'steps-toast'(env) {
     await STATES['flow-steps-overlap-edit'](env);

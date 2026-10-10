@@ -1,12 +1,12 @@
 # Chat
 
-Chat is a running conversation. Each board has its own, each team has one, and the whole workspace can have one. It appears only if your workspace has sign-in and whoever runs your Tabula server has turned chat on. If you do not see a **Chat** button or link, it is not available for you.
+Chat is a running conversation. Each board has its own, each team has one, and the whole workspace can have one. It appears in workspaces with sign-in, where it is on by default; whoever runs your Tabula server can turn it off. There is no chat on a server without sign-in. If you do not see a **Chat** button or link, it is not available for you.
 
 Comments are attached to a place on the board and are for discussing one thing. Chat belongs to the whole board, team or workspace and is for talking while you work.
 
 ## Where to chat
 
-- **Board chat**: everyone who can open the board. It is in the right-hand panel on the board, next to comments.
+- **Board chat**: the people with an account who can open the board. People who joined with a join code have no chat. It is in the right-hand panel on the board, next to comments.
 - **Team chat**: the members of a team. People who joined a board with a join code have no chat. Workspace owners and admins can read every team's chat and remove messages, but they can post only in teams they belong to. When a team is archived, its chat is read only.
 - **Workspace chat**: everyone in the workspace except guests. An admin can switch it off (see [Admin dashboard](admin.md#chat)).
 
@@ -86,7 +86,7 @@ Select the actions button on a message (the three dots) and choose **React**, th
 
 ## Who can write
 
-Everyone who can open the board can read the chat. Owners, editors and commenters can write. People who can only view the board can write only if a workspace admin has allowed it. The box is switched off, with the reason shown, when you cannot write: view-only access, a workspace that is read-only, or access to the board that you have lost.
+Everyone with an account who can open the board can read the chat; people who joined with a join code cannot. Owners, editors and commenters can write. People who can only view the board can write only if a workspace admin has allowed it. The box is switched off, with the reason shown, when you cannot write: view-only access, a workspace that is read-only, or access to the board that you have lost.
 
 ## Notifications
 
