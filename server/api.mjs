@@ -18,6 +18,7 @@ import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
+import { createBackupExport } from './backup-export.mjs';
 import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
 import { boardAccessForDirectory } from './tracker/access.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
@@ -152,7 +153,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, dataDir = config.dataDir, log = () => {} }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -453,11 +454,21 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     : [];
 
   const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, notFound, conflict }, cloud, ...ai });
+  const backupExport = backupConfig?.target === 'dir' && typeof backupConfig.pullTokenSha256 === 'string'
+    ? createBackupExport({ backupConfig, dataDir, now, log })
+    : null;
 
   // ------------------------------------------------------------ handlers
 
   const routes = [
     ...trackerApiRoutes,
+
+    ...(backupExport
+      ? [
+          compile('GET', 'backup-export/list', { exportToken: true, exportKind: 'list' }, (args) => backupExport.handle('list', args)),
+          compile('GET', 'backup-export/object', { exportToken: true, exportKind: 'object' }, (args) => backupExport.handle('object', args)),
+        ]
+      : []),
 
     compile('GET', 'config', { public: true }, () => [200, {
       authEnabled: config.authEnabled,
@@ -1346,6 +1357,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       throw badRequest('Malformed URL');
     }
     const method = String(req.method).toUpperCase();
+    const exportRoute = routes.find((route) => route.exportToken && route.parts.length === segments.length && route.parts.every((part, index) => part === segments[index]));
+    if (exportRoute) {
+      await exportRoute.handler({ req, res, query, method });
+      return;
+    }
     const guest = auth.authenticateGuest?.(req.headers.cookie) ?? null;
     if (guest && segments[0] === 'tracker') throw notFound('No such endpoint');
     if (guest && !guestApiAllows(method, segments, guest)) throw forbidden('This guest session is limited to one board');
