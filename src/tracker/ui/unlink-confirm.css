@@ -1,0 +1,39 @@
+/* The unlink prompt is a compact instance of the app's shared tray dialog. */
+.trk.trk-unlink-back .modal {
+  width: min(420px, calc(100vw - 32px - var(--safe-left, 0px) - var(--safe-right, 0px)));
+  max-height: min(520px, calc(100dvh - 32px - var(--safe-top, 0px) - var(--safe-bottom, 0px)));
+  border: 1px solid color-mix(in srgb, var(--tray-text) 42%, var(--tray));
+  border-radius: var(--radius-lg);
+  background: var(--tray);
+  color: var(--tray-text);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tray-text) 42%, var(--tray));
+}
+.trk.trk-unlink-back .modal-head { min-height: 62px; padding: 12px 14px 11px 18px; border-bottom: 2px solid var(--tray-text); }
+.trk.trk-unlink-back .modal-head h2 { margin: 0; color: var(--tray-text); font: 700 18px/1.3 var(--ui, 'Instrument Sans', ui-sans-serif, system-ui, sans-serif); letter-spacing: 0; }
+.trk.trk-unlink-back .modal-head .icon-btn { width: 44px; height: 44px; }
+.trk.trk-unlink-back .modal-body { padding: 16px 18px 8px; color: var(--tray-text); }
+.trk.trk-unlink-back .modal-body .trk-unlink-copy { margin: 0; color: var(--tray-text); font-size: 14px; line-height: 1.55; }
+.trk.trk-unlink-back .modal-actions { gap: 8px; padding: 12px 18px 16px; }
+.trk.trk-unlink-back .modal-actions .btn {
+  min-width: 96px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid color-mix(in srgb, var(--tray-text) 54%, var(--tray));
+  border-radius: var(--radius-sm);
+  color: var(--tray-text);
+  font-weight: 650;
+}
+.trk.trk-unlink-back .modal-actions .btn.primary { border-color: var(--signal); background: var(--signal); color: var(--on-signal); }
+.trk.trk-unlink-back .modal-actions .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 86%, var(--tray-text)); }
+.trk.trk-unlink-back .modal :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .trk.trk-unlink-back { padding: calc(16px + var(--safe-top, 0px)) calc(12px + var(--safe-right, 0px)) calc(16px + var(--safe-bottom, 0px)) calc(12px + var(--safe-left, 0px)); }
+  .trk.trk-unlink-back .modal { width: min(420px, 100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trk.trk-unlink-back .modal *, .trk.trk-unlink-back .modal *::before, .trk.trk-unlink-back .modal *::after { transition: none !important; animation: none !important; }
+}
+@media (forced-colors: active) {
+  .trk.trk-unlink-back .modal, .trk.trk-unlink-back .modal-actions .btn { border-color: CanvasText; }
+  .trk.trk-unlink-back .modal :focus-visible { outline-color: Highlight; }
+}
