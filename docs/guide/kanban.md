@@ -127,7 +127,7 @@ On a touch screen, a card on the board lifts after you press and hold it for abo
 
 ## Kanban templates
 
-The templates drawer and the Templates page offer four kanban templates: **Kanban**, **Sprint board**, **Bug triage** and **Personal tasks**. Their labels are added to the board's labels by name, so labels you already have are reused. Owners, owner types, due dates, card links and tracker links are never part of a template.
+The templates drawer and the Templates page offer four kanban templates: **Kanban**, **Sprint board**, **Bug triage** and **Personal tasks**. Their labels are added to the board's labels by name, so labels you already have are reused. Owners, owner types, due dates, card links and tracker links are never part of a template. Tracker links exist only where your server has the tracker turned on and you have access to it; if you do not see link actions in the kanban menu, the tracker is not available to you.
 
 When you save a selection that holds a kanban as your own template, or copy and paste a kanban, its lanes and cards come along. Saving strips owners, owner types, due dates and card or tracker links.
 
