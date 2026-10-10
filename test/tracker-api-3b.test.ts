@@ -353,4 +353,23 @@ describe('tracker session API slice 3b', () => {
       await cloud.cleanup();
     }
   });
+  it('idempotent retries write no extra audit rows, and a too-long search names the q parameter', async () => {
+    const key = h.unique('tracker-3b-audit-');
+    const first = await api(owner, 'POST', '/api/tracker/tickets', { title: 'Audit once', idempotencyKey: key });
+    expect(first.status).toBe(201);
+    const afterCreate = counts(h.dir);
+    const again = await api(owner, 'POST', '/api/tracker/tickets', { title: 'Audit once', idempotencyKey: key });
+    expect(again.body.ticket.key).toBe(first.body.ticket.key);
+    expect(counts(h.dir)).toEqual(afterCreate);
+
+    const route = `/api/tracker/tickets/${first.body.ticket.key}/comments`;
+    expect((await api(owner, 'POST', route, { body: 'once', clientId: 'audit-client-1' })).status).toBe(201);
+    const afterComment = counts(h.dir);
+    expect((await api(owner, 'POST', route, { body: 'once', clientId: 'audit-client-1' })).status).toBe(201);
+    expect(counts(h.dir)).toEqual(afterComment);
+
+    const long = await api(owner, 'GET', `/api/tracker/tickets?q=${'x'.repeat(600)}`);
+    expect(long.status).toBe(413);
+    expect(long.body.path).toBe('q');
+  });
 });

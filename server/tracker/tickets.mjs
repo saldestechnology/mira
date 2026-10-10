@@ -654,7 +654,7 @@ export function commentTicket({ directory, db: dbArg, actor, key, body, clientId
       ).get(info.type, info.id, rawClientId);
       if (prior) {
         if (prior.ticket_id !== row.id) throw conflict('clientId was already used for another ticket', 'clientId');
-        return { id: prior.id, ticketId: prior.ticket_id, actorType: prior.actor_type, actorId: prior.actor_id, author: prior.author_snapshot, body: prior.body, createdAt: prior.created_at };
+        return { id: prior.id, ticketId: prior.ticket_id, actorType: prior.actor_type, actorId: prior.actor_id, author: prior.author_snapshot, body: prior.body, createdAt: prior.created_at, replayed: true };
       }
     }
     db.prepare(
