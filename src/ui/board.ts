@@ -10,6 +10,8 @@ import { isBox } from '../types';
 import { createTrackerFrame, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
 import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from '../tracker-data';
 import { openRegisteredLinkDialog, openRegisteredUnlinkConfirm } from '../tracker/ui/link-seam';
+import { installTrackerLinkDialog } from '../tracker/ui/link-dialog-open';
+import { installTrackerUnlinkConfirm } from '../tracker/ui/unlink-confirm';
 import { mountTrackerFrames } from '../tracker/ui/frame';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
@@ -101,6 +103,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       if (!openRegisteredUnlinkConfirm({ boardId: app.conn.id, kanbanId, link, store })) app.notify('The unlink confirmation is unavailable.');
     }).catch((error: unknown) => app.notify(error instanceof Error ? error.message : 'Could not load tracker links.'));
   };
+  const uninstallLinkDialog = installTrackerLinkDialog();
+  const uninstallUnlinkConfirm = installTrackerUnlinkConfirm();
+  app.lifetime?.signal.addEventListener('abort', () => { uninstallLinkDialog(); uninstallUnlinkConfirm(); }, { once: true });
   const chrome = h('div', { class: 'chrome' });
   root.appendChild(chrome);
   app.notify = toast;
