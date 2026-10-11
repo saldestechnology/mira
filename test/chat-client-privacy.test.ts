@@ -334,6 +334,82 @@ describe('chat account privacy', () => {
     expect(chat.view().messages).toMatchObject([{ id: 1, text: '', deleted: true, deletedBy: 'moderator' }]);
   });
 
+  it.each([404, 401])('ignores a stale read-marker %s after the channel access revision changes', async (status) => {
+    pageHandler = async () => ({ messages: [message(1)], next: null });
+    const pendingRead = deferred<Awaited<ReturnType<typeof api.chatRead>>>();
+    vi.spyOn(api, 'chatRead').mockReturnValue(pendingRead.promise);
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    await whenPageCalls(1);
+    await loaded;
+
+    const socket = lastSocket();
+    socket.open();
+    socket.say({ t: 'message', kind: 'workspace', ref: 'main', message: message(2, 'new message') });
+    chat.markRead();
+    expect(api.chatRead).toHaveBeenCalledWith('workspace', 'main', 2);
+
+    cacheRig.deleteChannel.mockClear();
+    cacheRig.clearChatCache.mockClear();
+    socket.say({ t: 'closed', kind: 'workspace', ref: 'main' });
+    const deletesAfterDenial = cacheRig.deleteChannel.mock.calls.length;
+    expect(chat.view()).toMatchObject({ lost: true, messages: [], signedOut: false });
+
+    pendingRead.reject(new ApiError(status, status === 401 ? 'signed_out' : 'not_found', 'stale refusal'));
+    await pendingRead.promise.catch(() => undefined);
+    expect(cacheRig.deleteChannel).toHaveBeenCalledTimes(deletesAfterDenial);
+    expect(cacheRig.clearChatCache).not.toHaveBeenCalled();
+    expect(chat.view()).toMatchObject({ lost: true, messages: [], signedOut: false });
+  });
+
+  it('does not merge a send response after channel access is denied', async () => {
+    pageHandler = async () => ({ messages: [message(1)], next: null });
+    const pendingSend = deferred<{ message: ChatMessage }>();
+    vi.spyOn(api, 'chatSend').mockReturnValue(pendingSend.promise);
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    await whenPageCalls(1);
+    await loaded;
+
+    chat.send('sent before denial', null);
+    await vi.waitFor(() => expect(api.chatSend).toHaveBeenCalled());
+    lastSocket().say({ t: 'closed', kind: 'workspace', ref: 'main' });
+    const sent = nextChange(chat);
+    pendingSend.resolve({ message: message(2, 'private response after denial') });
+    await sent;
+
+    expect(chat.view()).toMatchObject({ lost: true, messages: [], pending: [] });
+  });
+
+  it('releases the history queue after a fetch never settles', async () => {
+    vi.useFakeTimers();
+    try {
+      pageHandler = async (call) => call === 1
+        ? new Promise<ChatPage>(() => undefined)
+        : { messages: [message(2, 'loaded after watchdog')], next: null };
+      const chat = openChat('workspace', 'main', life.signal);
+      const firstLoad = waitForLoad(chat);
+      chat.setVisible(true);
+      await whenPageCalls(1);
+      await vi.advanceTimersByTimeAsync(20_000);
+      await firstLoad;
+      expect(chat.view()).toMatchObject({ loading: false, savedOnly: true });
+
+      await Promise.resolve();
+      await Promise.resolve();
+      const retry = waitForLoad(chat);
+      chat.setVisible(false);
+      chat.setVisible(true);
+      await whenPageCalls(2);
+      await retry;
+      expect(chat.view().messages).toMatchObject([{ id: 2, text: 'loaded after watchdog' }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('serializes overlapping newest-page loads without losing a live message', async () => {
     const deferredPages: ReturnType<typeof deferred<ChatPage>>[] = [];
     pageHandler = async (call) => {
@@ -584,7 +660,7 @@ describe('chat account privacy', () => {
     ]);
   });
 
-  it('reapplies a pending tombstone on REST failure when a live message arrives after an empty cache restore', async () => {
+  it('keeps a pending tombstone on a live message throughout history loading', async () => {
     const savedRead = deferred<unknown>();
     const restPage = deferred<ChatPage>();
     cacheRig.readChannel.mockReturnValue(savedRead.promise);
@@ -598,12 +674,16 @@ describe('chat account privacy', () => {
     socket.say({ t: 'delete', kind: 'workspace', ref: 'main', id: 4, by: 'moderator' });
     savedRead.resolve(undefined);
     await whenPageCalls(1);
+    const rendered: string[] = [];
+    chat.onChange(() => rendered.push(chat.view().messages.map((item) => item.text).join('|')));
     socket.say({ t: 'message', kind: 'workspace', ref: 'main', message: message(4, 'live stale text') });
-    expect(chat.view().messages).toMatchObject([{ id: 4, text: 'live stale text', deleted: false }]);
+    expect(chat.view().messages).toMatchObject([{ id: 4, text: '', deleted: true, deletedBy: 'moderator' }]);
+    expect(rendered.join('\n')).not.toContain('live stale text');
 
     restPage.reject(new Error('offline'));
     await loaded;
     expect(chat.view().messages).toMatchObject([{ id: 4, text: '', deleted: true, deletedBy: 'moderator' }]);
+    expect(rendered.join('\n')).not.toContain('live stale text');
   });
 
   it('drops cached rows outside the reconnect page set even when that page overlaps the newest cached id', async () => {
@@ -662,6 +742,7 @@ describe('chat account privacy', () => {
   });
 
   it('finishes sign-in despite synchronous reset and change-listener exceptions', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const chat = openChat('workspace', 'main', life.signal);
     const offChat = chat.onChange(() => { throw new Error('view failed'); });
     const sawChange = vi.fn<() => void>();
@@ -672,6 +753,7 @@ describe('chat account privacy', () => {
       await expect(setSignedIn(me('user-b'))).resolves.toBeUndefined();
       expect(authState()).toMatchObject({ mode: 'signed-in', me: { user: { id: 'user-b' } } });
       expect(sawChange).toHaveBeenCalled();
+      expect(warning).toHaveBeenCalledWith('[chat] listener failed: Error: view failed');
     } finally {
       offChat();
       offObserved();

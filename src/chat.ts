@@ -19,6 +19,8 @@ const KINDS: readonly ChatKind[] = ['board', 'team', 'workspace'];
 const PING_MS = 25_000;
 const PONG_WAIT_MS = 10_000;
 const READ_THROTTLE_MS = 2000;
+/** Longer than the API fetch timeout; also covers IndexedDB and runtimes without AbortSignal.timeout. */
+const HISTORY_WATCHDOG_MS = 15_000;
 /** Pages fetched backwards after a reconnect before the list starts over from the newest page. */
 const CATCH_UP_PAGES = 5;
 /** Too many sockets of this person (4429): try again much later. */
@@ -148,18 +150,25 @@ function emit(ch?: Channel) {
     for (const fn of Array.from(c.listeners)) {
       try {
         fn();
-      } catch {
+      } catch (err) {
         /* A view listener must not interrupt store updates or other listeners. */
+        warnListenerFailure(err);
       }
     }
   }
   for (const fn of Array.from(badgeListeners)) {
     try {
       fn();
-    } catch {
+    } catch (err) {
       /* A badge listener must not interrupt store updates or other listeners. */
+      warnListenerFailure(err);
     }
   }
+}
+
+function warnListenerFailure(error: unknown) {
+  const detail = error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown error';
+  console.warn(`[chat] listener failed: ${detail}`);
 }
 
 // ---------------------------------------------------------------- socket
@@ -308,7 +317,7 @@ function onFrame(f: Record<string, unknown>) {
     if (ch.lost) return;
     if (!ch.visible) return;
     if (ch.loading || ch.catchingUp || ch.loadingOlder) rememberArrival(ch, f.message.id, { message: f.message });
-    ch.messages = keepBounded(ch, mergeMessages(ch.messages, [f.message]));
+    ch.messages = keepBounded(ch, reconcileArrivals(mergeMessages(ch.messages, [f.message]), ch.arrived));
     settleDelivered([f.message]);
     saveChannel(ch);
     emit(ch);
@@ -448,6 +457,22 @@ function currentHistoryRequest(ch: Channel, request: HistoryRequest): boolean {
   return request.generation === generation && request.userId === meId() && request.accessRevision === ch.accessRevision;
 }
 
+function withHistoryWatchdog<T>(request: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Chat history request timed out')), HISTORY_WATCHDOG_MS);
+    request.then(
+      (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 function queueHistory(ch: Channel, work: () => Promise<void>): Promise<void> {
   const task = ch.historyQueue.catch(() => undefined).then(work);
   ch.historyQueue = task.then(() => undefined, () => undefined);
@@ -479,15 +504,15 @@ async function loadChannel(ch: Channel, request: HistoryRequest) {
   try {
     if (!userId) return;
     if (!skipCache && !ch.messages.length) {
-      const saved = await cache.readChannel(userId, ch.key);
+      const saved = await withHistoryWatchdog(cache.readChannel(userId, ch.key));
       if (!currentHistoryRequest(ch, request)) return;
       if (saved) ch.messages = reconcileArrivals(mergeMessages(saved.messages, ch.messages), ch.arrived);
       emit(ch);
     }
     const [info, page, summary] = await Promise.all([
-      api.chatChannel(ch.kind, ch.ref),
-      api.chatMessages(ch.kind, ch.ref, { limit: PAGE }),
-      api.chatUnread().catch(() => null),
+      withHistoryWatchdog(api.chatChannel(ch.kind, ch.ref)),
+      withHistoryWatchdog(api.chatMessages(ch.kind, ch.ref, { limit: PAGE })),
+      withHistoryWatchdog(api.chatUnread().catch(() => null)),
     ]);
     if (!currentHistoryRequest(ch, request)) return;
     ch.info = { ...info, access: withReadOnly(info.access, workspaceReadOnly || info.access.readOnly) };
@@ -555,7 +580,7 @@ async function catchUpChannel(ch: Channel, request: HistoryRequest) {
     let next: number | null = null;
     let before: number | undefined;
     for (let i = 0; i < CATCH_UP_PAGES; i++) {
-      const page = await api.chatMessages(ch.kind, ch.ref, { limit: PAGE, before });
+      const page = await withHistoryWatchdog(api.chatMessages(ch.kind, ch.ref, { limit: PAGE, before }));
       if (!currentHistoryRequest(ch, request)) return;
       fetched = mergeMessages(fetched, page.messages);
       next = page.next;
@@ -643,14 +668,18 @@ async function flush() {
       if (!item) break;
       setItem(item.clientId, { state: 'sending', reason: undefined, waitUntil: undefined });
       emit();
+      const requestedChannel = channels.get(`${item.kind}/${item.ref}`);
+      const request = requestedChannel ? historyRequest(requestedChannel) : null;
       try {
         const { message } = await api.chatSend(item.kind, item.ref, { clientId: item.clientId, text: item.text, replyTo: item.replyTo, objectId: item.objectId });
         if (gen !== generation || userId !== meId()) break;
         dropItem(item.clientId);
         flushAttempt = 0;
         const ch = channels.get(`${item.kind}/${item.ref}`);
-        if (ch?.visible) ch.messages = keepBounded(ch, mergeMessages(ch.messages, [message]));
-        if (ch) saveChannel(ch);
+        if (ch && ch === requestedChannel && request && !ch.lost && currentHistoryRequest(ch, request)) {
+          if (ch.visible) ch.messages = keepBounded(ch, mergeMessages(ch.messages, [message]));
+          saveChannel(ch);
+        }
         emit();
       } catch (err) {
         if (gen !== generation || userId !== meId()) break;
@@ -759,7 +788,10 @@ export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): Boar
     ch.lastRead = Math.max(ch.lastRead ?? 0, newest);
     unread.set(key, { unread: 0, mentions: 0, lastId: ch.lastRead });
     emit(ch);
-    api.chatRead(ch.kind, ch.ref, newest).catch((err) => handleChatFailure(ch, err));
+    const request = historyRequest(ch);
+    api.chatRead(ch.kind, ch.ref, newest).catch((err) => {
+      if (currentHistoryRequest(ch, request)) handleChatFailure(ch, err);
+    });
   }
 
   return {
@@ -813,7 +845,7 @@ export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): Boar
         ch.arrived = new Map();
         emit(ch);
         try {
-          const page = await api.chatMessages(ch.kind, ch.ref, { limit: PAGE, before: oldestId(ch.messages) || undefined });
+          const page = await withHistoryWatchdog(api.chatMessages(ch.kind, ch.ref, { limit: PAGE, before: oldestId(ch.messages) || undefined }));
           if (!currentHistoryRequest(ch, request)) return;
           ch.messages = reconcileArrivals(mergeMessages(ch.messages, page.messages), ch.arrived);
           ch.next = page.next;
