@@ -358,7 +358,9 @@ describe('linked card projection and entry gating', () => {
     expect(markup).toContain('height="100" fill="var(--canvas-ink)"');
     expect(markup).toContain('Fix &lt;script&gt; &amp; login');
     expect(markup).toContain('Review &lt;img&gt;&amp;');
-    expect(markup).toContain('Unmapped state');
+    expect(markup).toContain('trk-unmapped-state');
+    expect(markup).toContain('State not mapped to a lane');
+    expect(markup).not.toContain('Unmapped state');
     expect(markup).not.toContain('<script>');
     expect(markup).not.toContain('<img>');
   });
