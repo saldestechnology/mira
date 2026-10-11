@@ -15,7 +15,7 @@ function context(): LinkDialogContext {
     snapshot: () => ({ meta: { states } }),
     suggestLinkMapping: async (...args: unknown[]) => {
       calls.push(args);
-      return { map: { lane: 'todo' }, unmappedLanes: [], existingCardCount: 0 };
+      return { map: { lane: 'todo' }, unmappedLanes: [], existingCardCount: 0, nextKey: 'TAB-1', stateNotMapped: [] };
     },
     linkKanban: async () => { throw new Error('not used in this test'); },
   };

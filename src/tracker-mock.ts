@@ -53,7 +53,7 @@ export interface TrackerMockKanban {
   lanes: Array<{ id: string; name: string; stage?: 'todo' | 'doing' | 'done' }>;
   cards: Array<{
     id: string; laneId: string; title: string; description?: string; ownerId?: string; ownerName?: string;
-    due?: string; labels?: string[];
+    due?: string; labels?: string[]; linkedTicketKey?: string;
   }>;
 }
 
@@ -134,6 +134,7 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
   const events = new Map<number, TrackerEvent>();
   const subscriptions = new Set<string>();
   const idempotentCreates = new Map<string, string>();
+  const idempotentLinkCreates = new Map<string, TrackerLinkKanbanResult>();
   const idempotentComments = new Map<string, string>();
   let seq = 0;
   let nextNumber = 1;
@@ -224,16 +225,17 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
     return event;
   }
 
-  function createTicketFromCard(card: TrackerMockKanban['cards'][number], state: TrackerState): TrackerTicket {
-    const title = card.title.trim() || 'Untitled card';
+  function createTicketFromCard(card: TrackerMockKanban['cards'][number], state: TrackerState, project: TrackerProject | null = null, extraLabels: TrackerTicket['labels'] = []): TrackerTicket {
+    const title = card.title.trim();
     const owner = card.ownerId ? meta.members.find((member) => member.userId === card.ownerId)
       : card.ownerName ? meta.members.find((member) => member.name.toLocaleLowerCase() === card.ownerName!.toLocaleLowerCase()) : undefined;
     const assignee = owner ? { userId: owner.userId, name: owner.name } : null;
     const ticket: TrackerTicket = {
       id: newId('ticket'), key: `${meta.prefix}-${nextNumber++}`, trackerId: meta.trackerId,
       title, description: card.description ?? '', state: stateValue(state), priority: 'none', assignee,
-      creator: { type: 'user', id: meta.me.userId, name: actor().name }, labels: labelValues(card.labels),
-      project: null, milestone: null, estimate: null, due: card.due ?? null, parent: null,
+      creator: { type: 'user', id: meta.me.userId, name: actor().name },
+      labels: [...new Map([...labelValues(card.labels), ...copy(extraLabels)].map((label) => [label.id, label])).values()],
+      project: project ? { id: project.id, name: project.name } : null, milestone: null, estimate: null, due: card.due ?? null, parent: null,
       relations: [], links: [], aliases: [], archivedAt: null, createdAt: now(), updatedAt: now(), updatedSeq: 0,
     };
     tickets.set(ticket.key.toLocaleUpperCase(), ticket);
@@ -600,82 +602,106 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       const facets = query.includeFacets ? makeFacets(all) : undefined;
       return { tickets: page, nextCursor: offset + limit < all.length ? String(offset + limit) : null, ...(facets ? { facets } : {}) };
     },
-    async listLinks(boardId) {
+    async listLinks(boardId, options) {
       assertBoardAllowed(boardId);
-      return { links: copy([...links.values()].filter(({ link }) => link.boardId === boardId).map(({ link }) => link)) };
+      return { links: copy([...links.values()].filter(({ link }) => link.boardId === boardId && (!options?.kanbanId || link.kanbanId === options.kanbanId)).map(({ link }) => link)) };
     },
     async suggestLinkMapping(boardId, kanbanId) {
       const kanban = findKanban(boardId, kanbanId);
       const categoryForStage = { todo: 'unstarted', doing: 'started', done: 'completed' } as const;
-      const normalName = (value: string) => value.toLocaleLowerCase().replace(/[^a-z0-9]/g, '');
+      const normalName = (value: string) => value.toLocaleLowerCase();
       const used = new Set<string>();
       const map: TrackerLinkSuggestion['map'] = {};
       const unmappedLanes: string[] = [];
       for (const lane of kanban.lanes) {
         const category = lane.stage ? categoryForStage[lane.stage] : undefined;
-        const candidates = meta.states.filter((state) => !category || state.category === category);
-        const state = candidates.find((candidate) => !used.has(candidate.key) && normalName(candidate.name) === normalName(lane.name))
-          ?? (category ? candidates.find((candidate) => !used.has(candidate.key)) : undefined);
+        const state = meta.states.find((candidate) => !used.has(candidate.key)
+          && (normalName(candidate.name) === normalName(lane.name) || normalName(candidate.key) === normalName(lane.name)))
+          ?? (category ? meta.states.find((candidate) => !used.has(candidate.key) && candidate.category === category) : undefined);
         if (state) {
           map[lane.id] = state.key;
           used.add(state.key);
         } else {
-          map[lane.id] = null;
           unmappedLanes.push(lane.id);
         }
       }
-      return { suggestion: { map, unmappedLanes, existingCardCount: kanban.cards.length } };
+      return {
+        map,
+        unmappedLanes,
+        existingCardCount: kanban.cards.length,
+        nextKey: `${meta.prefix}-${nextNumber}`,
+        stateNotMapped: meta.states.filter((state) => !used.has(state.key)).map((state) => state.key),
+      };
     },
     async linkKanban(input: TrackerLinkKanbanInput): Promise<TrackerLinkKanbanResult> {
       ensureWritable();
+      if (typeof input.idempotencyKey !== 'string' || input.idempotencyKey.length < 8 || input.idempotencyKey.length > 64) {
+        throw new TrackerError('invalid_input', 'Idempotency key must be 8 to 64 characters.', { path: 'idempotencyKey', status: 400 });
+      }
+      const replay = idempotentLinkCreates.get(input.idempotencyKey);
+      if (replay) return copy(replay);
       const kanban = findKanban(input.boardId, input.kanbanId);
       if ([...links.values()].some(({ link }) => link.boardId === input.boardId && link.kanbanId === input.kanbanId)) {
-        throw new TrackerError('already_linked', 'This kanban is already linked to a tracker.', { status: 409 });
+        throw new TrackerError('conflict', 'This kanban is already linked to a tracker.', { path: 'kanbanId', status: 409 });
       }
       const stateByLane = new Map<string, TrackerState>();
       const usedStates = new Set<string>();
       const laneIds = new Set(kanban.lanes.map((lane) => lane.id));
-      for (const [laneId, stateKey] of Object.entries(input.map)) {
-        if (!laneIds.has(laneId)) throw new TrackerError('invalid_mapping', 'The lane no longer exists.', { path: laneId, status: 400 });
-        if (typeof stateKey !== 'string') throw new TrackerError('invalid_mapping', 'Choose a tracker state for this lane.', { path: laneId, status: 400 });
+      for (const [laneId, stateKey] of Object.entries(input.mapping)) {
+        if (!laneIds.has(laneId)) throw new TrackerError('invalid_input', 'The lane no longer exists.', { path: `mapping.${laneId}`, status: 400 });
+        if (typeof stateKey !== 'string') throw new TrackerError('invalid_input', 'Choose a tracker state for this lane.', { path: `mapping.${laneId}`, status: 400 });
         const state = meta.states.find((candidate) => candidate.key.toLocaleLowerCase() === stateKey.toLocaleLowerCase());
-        if (!state) throw new TrackerError('invalid_mapping', `Unknown tracker state: ${stateKey}.`, { path: laneId, status: 400 });
-        if (usedStates.has(state.key)) throw new TrackerError('invalid_mapping', 'A tracker state can be used by only one lane.', { path: laneId, status: 400 });
+        if (!state) throw new TrackerError('invalid_input', `Unknown tracker state: ${stateKey}.`, { path: `mapping.${laneId}`, status: 400 });
+        if (usedStates.has(state.key)) throw new TrackerError('invalid_input', 'A tracker state can be used by only one lane.', { path: `mapping.${laneId}`, status: 400 });
         stateByLane.set(laneId, state);
         usedStates.add(state.key);
       }
+      const project = input.project == null ? null : (meta.projects ?? []).find((item) => item.name.toLocaleLowerCase() === input.project?.toLocaleLowerCase()) ?? null;
+      if (input.project != null && !project) throw new TrackerError('invalid_input', `Unknown project: ${input.project}`, { path: 'project', status: 400 });
+      const extraLabels = labelValues(input.labels);
       if (input.createTickets) {
-        for (const card of kanban.cards) {
-          if (!stateByLane.has(card.laneId)) continue;
-          const title = card.title.trim() || 'Untitled card';
+        const cardsToCreate = kanban.cards.filter((card) => !card.linkedTicketKey && stateByLane.has(card.laneId) && card.title.trim());
+        if (cardsToCreate.length > 500) throw new TrackerError('limit_exceeded', 'Create at most 500 tickets at once.', { path: 'createTickets', status: 413 });
+        for (const card of cardsToCreate) {
+          const title = card.title.trim();
           if (Array.from(title).length > 200) throw new TrackerError('invalid_input', 'Title must be one line with 1 to 200 code points.', { path: card.id });
           if (card.due !== undefined && !isValidDate(card.due)) throw new TrackerError('invalid_input', 'Due must be a valid YYYY-MM-DD date.', { path: card.id });
           labelValues(card.labels);
         }
       }
+      const linkId = newId('kanban-link');
       const created: TrackerLinkKanbanResult['created'] = [];
       const skipped: TrackerLinkKanbanResult['skipped'] = [];
       const linkedCardIds: string[] = [];
-      for (const card of kanban.cards) {
-        const state = stateByLane.get(card.laneId);
-        if (!input.createTickets) {
-          skipped.push({ cardId: card.id, reason: 'ticket_creation_disabled' });
-        } else if (!state) {
-          skipped.push({ cardId: card.id, reason: 'unmapped_lane' });
-        } else {
-          const ticket = createTicketFromCard(card, state);
-          ticket.links.push({ id: newId('card-link'), kind: 'card', boardId: input.boardId, kanbanId: input.kanbanId, cardId: card.id, at: new Date(now()).toISOString() });
-          created.push({ cardId: card.id, key: ticket.key });
-          linkedCardIds.push(card.id);
+      if (input.createTickets) {
+        for (const card of kanban.cards) {
+          const state = stateByLane.get(card.laneId);
+          if (card.linkedTicketKey) {
+            skipped.push({ cardId: card.id, reason: 'already_linked' });
+          } else if (!state) {
+            skipped.push({ cardId: card.id, reason: 'unmapped_lane' });
+          } else if (!card.title.trim()) {
+            skipped.push({ cardId: card.id, reason: 'empty_title' });
+          } else {
+            const ticket = createTicketFromCard(card, state, project, extraLabels);
+            ticket.links.push({ id: newId('card-link'), kind: 'card', boardId: input.boardId, kanbanId: input.kanbanId, cardId: card.id, linkId, at: new Date(now()).toISOString() });
+            card.linkedTicketKey = ticket.key;
+            created.push({ cardId: card.id, key: ticket.key });
+            linkedCardIds.push(card.id);
+          }
         }
       }
+      const mapping = [...stateByLane].map(([laneId, state]) => ({ laneId, stateKey: state.key, stateId: state.id }));
+      const cardCount = created.length;
       const link: TrackerKanbanLink = {
-        id: newId('kanban-link'), boardId: input.boardId, kanbanId: input.kanbanId, trackerId: meta.trackerId,
-        map: Object.fromEntries([...stateByLane].map(([laneId, state]) => [laneId, state.key])),
-        createdAt: now(), ticketCount: created.length,
+        id: linkId, boardId: input.boardId, kanbanId: input.kanbanId, workflowId: 'workflow-default', mapping,
+        map: Object.fromEntries(mapping.map(({ laneId, stateKey }) => [laneId, stateKey])),
+        cardCount, pendingProjections: 0, createdAt: now(), createdBy: meta.me.userId, ticketCount: cardCount,
       };
       links.set(link.id, { link, cardIds: linkedCardIds });
-      return { link: copy(link), created: copy(created), skipped: copy(skipped) };
+      const result: TrackerLinkKanbanResult = { link: copy(link), created: copy(created), skipped: copy(skipped), projectionPending: false };
+      idempotentLinkCreates.set(input.idempotencyKey, copy(result));
+      return result;
     },
     async unlinkKanban(id) {
       ensureWritable();
@@ -683,10 +709,35 @@ export function createMockTrackerApi(seed: TrackerMockSeed = {}): TrackerApi {
       if (!record) throw new TrackerError('not_found', 'This kanban link no longer exists.', { status: 404 });
       assertBoardAllowed(record.link.boardId);
       links.delete(id);
+      const kanban = kanbans.get(boardKanbanKey(record.link.boardId, record.link.kanbanId));
+      for (const card of kanban?.cards ?? []) if (record.cardIds.includes(card.id)) delete card.linkedTicketKey;
       for (const ticket of tickets.values()) {
-        ticket.links = ticket.links.filter((item) => item.kind !== 'card' || item.boardId !== record.link.boardId || item.kanbanId !== record.link.kanbanId);
+        ticket.links = ticket.links.filter((item) => item.kind !== 'card' || item.linkId !== id);
       }
-      return { ok: true, unlinked: record.cardIds.length };
+      return { link: { ...copy(record.link), removedAt: now() }, unlinked: record.cardIds.length, projectionPending: false };
+    },
+    async createTicketForCard(linkId, cardId) {
+      ensureWritable();
+      const record = links.get(linkId);
+      if (!record) throw new TrackerError('not_found', 'This kanban link no longer exists.', { status: 404 });
+      assertBoardAllowed(record.link.boardId);
+      const kanban = findKanban(record.link.boardId, record.link.kanbanId);
+      const card = kanban.cards.find((item) => item.id === cardId);
+      if (!card) throw new TrackerError('invalid_input', 'The card is not on this kanban.', { path: 'cardId', status: 400 });
+      if (card.linkedTicketKey || record.cardIds.includes(cardId)) throw new TrackerError('conflict', 'This card is already linked to a ticket.', { status: 409 });
+      const stateKey = record.link.map[card.laneId];
+      const state = stateKey ? meta.states.find((item) => item.key === stateKey) : undefined;
+      if (!state) throw new TrackerError('invalid_input', 'The card lane is not mapped to a tracker state.', { path: 'cardId', status: 400 });
+      if (!card.title.trim()) throw new TrackerError('invalid_input', 'A ticket title is required for this card.', { path: 'cardId', status: 400 });
+      if (Array.from(card.title.trim()).length > 200) throw new TrackerError('invalid_input', 'Title must be one line with 1 to 200 code points.', { path: 'cardId', status: 400 });
+      if (card.due !== undefined && !isValidDate(card.due)) throw new TrackerError('invalid_input', 'Due must be a valid YYYY-MM-DD date.', { path: 'cardId', status: 400 });
+      const ticket = createTicketFromCard(card, state);
+      ticket.links.push({ id: newId('card-link'), kind: 'card', boardId: record.link.boardId, kanbanId: record.link.kanbanId, cardId, linkId, at: new Date(now()).toISOString() });
+      card.linkedTicketKey = ticket.key;
+      record.cardIds.push(cardId);
+      record.link.cardCount += 1;
+      record.link.ticketCount = record.link.cardCount;
+      return { ticket: copy(ticket), cardId, projectionPending: false };
     },
     async ticketsUpdatedSince(since) {
       return { tickets: [...tickets.values()].filter((ticket) => ticket.updatedSeq > since).map(copy), seq };

@@ -30,6 +30,7 @@ const ERROR_COPY: Record<NonNullable<LinkDialogModelState['errorCode']>, string>
 const safeCount = (count: number) => Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
 
 function errorMessage(state: LinkDialogModelState): string | null {
+  if (state.errorCode === 'other' && state.showServerMessage) return state.errors.general ?? ERROR_COPY.other;
   return state.errorCode ? ERROR_COPY[state.errorCode] : state.errors.general;
 }
 

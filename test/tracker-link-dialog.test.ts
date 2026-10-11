@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TrackerError, type TrackerLinkKanbanResult, type TrackerState } from '../src/tracker-types';
+import { TrackerError, type TrackerKanbanLink, type TrackerLinkKanbanInput, type TrackerLinkKanbanResult, type TrackerState } from '../src/tracker-types';
 import { createLinkDialogModel } from '../src/tracker/ui/link-dialog-model';
 import { mountLinkDialog } from '../src/tracker/ui/link-dialog';
 import type { LinkDialogContext } from '../src/tracker/ui/link-seam';
@@ -24,7 +24,7 @@ function fixture(options: {
   lanes?: Array<{ id: string; name: string; cardCount: number }>;
   cardCount?: number;
   suggestionMap?: Record<string, string | null>;
-  linkKanban?: (input: { boardId: string; kanbanId: string; map: Record<string, string>; createTickets: boolean }) => Promise<TrackerLinkKanbanResult>;
+  linkKanban?: (input: TrackerLinkKanbanInput) => Promise<TrackerLinkKanbanResult>;
 } = {}) {
   const lanes = options.lanes ?? [
     { id: 'doing', name: 'Doing', cardCount: 11 },
@@ -39,7 +39,7 @@ function fixture(options: {
   const model = createLinkDialogModel({
     lanes: lanes.map(({ id, name }) => ({ id, name })),
     states: states.map(({ id, key, name, category }) => ({ id, key, name, category })),
-    suggestion: { map: options.suggestionMap ?? { doing: 'in_progress' }, unmappedLanes: [], existingCardCount: cardCount },
+    suggestion: { map: options.suggestionMap ?? { doing: 'in_progress' }, unmappedLanes: [], existingCardCount: cardCount, nextKey: 'TAB-1', stateNotMapped: ['done'] },
     existingCardCount: cardCount,
   });
   const host = browser!.document.createElement('div');
@@ -56,9 +56,13 @@ function fixture(options: {
 }
 
 function result(): TrackerLinkKanbanResult {
+  const link: TrackerKanbanLink = {
+    id: 'link-1', boardId: 'board-1', kanbanId: 'kanban-1', workflowId: 'workflow-1',
+    mapping: [{ laneId: 'doing', stateKey: 'in_progress', stateId: 'state-doing' }], map: { doing: 'in_progress' },
+    cardCount: 18, pendingProjections: 0, createdAt: 0, createdBy: 'user-me', ticketCount: 18,
+  };
   return {
-    link: { id: 'link-1', boardId: 'board-1', kanbanId: 'kanban-1', trackerId: 'tracker-1', map: { doing: 'in_progress' }, createdAt: 0, ticketCount: 18 },
-    created: [], skipped: [],
+    link, created: [], skipped: [], projectionPending: false,
   };
 }
 
@@ -153,6 +157,19 @@ describe('tracker link dialog', () => {
     expect(button(host, 'Retry')).toBeDefined();
     expect(model.state.createTickets).toBe(true);
     expect(model.state.mapping.doing).toBe('in_progress');
+  });
+
+  it('shows the server guidance when creating tickets exceeds the 500-card limit', async () => {
+    browser = installTrackerUiBrowser();
+    const guidance = 'Link without creating tickets, then create per card.';
+    const { host } = fixture({
+      lanes: [{ id: 'doing', name: 'Doing', cardCount: 18 }],
+      linkKanban: async () => { throw new TrackerError('limit_exceeded', guidance, { path: 'createTickets', status: 413 }); },
+    });
+    button(host, 'Next').click();
+    button(host, 'Link and create 18 tickets').click();
+    await flush();
+    expect(textOf(need(host, '[role="alert"]'))).toContain(guidance);
   });
 
   it('closes on Escape, traps focus, and treats hostile lane names as text', () => {
