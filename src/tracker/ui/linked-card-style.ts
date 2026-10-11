@@ -8,6 +8,8 @@ export interface LinkedCardHeaderOptions {
   state: LinkedCardState | null;
   laneStateKey: string | null | undefined;
   width: number;
+  /** The card's height; without it the marker is 100% of the nearest viewport, which is only right inside a card-sized svg. */
+  height?: number;
   zoom: number;
   offline?: boolean;
   blocked?: boolean;
@@ -64,7 +66,7 @@ export function linkedCardHeaderMarkup(options: LinkedCardHeaderOptions): string
   }
 
   const keyMarkup = `<text class="trk-linked-key" x="12" y="17" font-family="var(--ui, 'Instrument Sans', sans-serif)" font-size="11" font-weight="700" font-variant-numeric="tabular-nums"><tspan fill="var(--graphite)">${escapeXml(prefix)}</tspan><tspan fill="var(--canvas-ink)">${escapeXml(numberPart)}</tspan></text>`;
-  return `<g class="trk-linked-card-header" color="var(--canvas-ink)"><rect class="trk-linked-marker" x="0" y="0" width="3" height="100%" fill="var(--canvas-ink)"/>${keyMarkup}${parts.join('')}</g>`;
+  return `<g class="trk-linked-card-header" color="var(--canvas-ink)"><rect class="trk-linked-marker" x="0" y="0" width="3" height="${options.height !== undefined && Number.isFinite(options.height) ? number(options.height) : '100%'}" fill="var(--canvas-ink)"/>${keyMarkup}${parts.join('')}</g>`;
 }
 
 function warningGlyph(x: number, y: number): string {
