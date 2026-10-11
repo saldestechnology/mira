@@ -16,6 +16,8 @@ import type { Label } from './types';
 import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
 import { renderTrackerFrame } from './tracker-frame';
+import { linkedCardHeaderMarkup } from './tracker/ui/linked-card-style';
+import type { TrackerPriority, TrackerStateCategory } from './tracker-types';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, laneMenuRect, localToday, lowDetail, wipFullMessage, type FilterChip } from './ui/kanban-logic';
 
 export interface MarkupCtx {
@@ -546,7 +548,6 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
   let inner = `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" ${fillStyle(K.paper)}/>`;
   if (accent) inner += `<rect x="0" y="0" width="${CARD.accent}" height="${n(h)}" ${fillStyle(accent)}/>`;
   const linked = o.extProvider === 'tabula';
-  if (linked) inner += `<rect x="0" y="0" width="3" height="${n(h)}" ${fillStyle(K.linked)}/>`;
   inner += edge === 'ghost'
     ? `<rect x="1" y="1" width="${n(w - 2)}" height="${n(h - 2)}" ${strokeStyle(K.canvasInk)} stroke-width="2"/>`
     : `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" ${strokeStyle(K.edge)} stroke-width="1"/>`;
@@ -562,34 +563,25 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
   const fam = escapeXml(fontFamily(o.font));
   const lines = cardTitleLines(o, w);
   let y = CARD.padY;
+  let unmappedChip = false;
   if (linked) {
     const projection = cardProjection(o);
-    const key = o.extKey ?? '';
-    const keyFont = fontCss(o.font, 9, 700);
-    const keyWidth = key ? measure(key, keyFont) : 0;
-    const headerBaseline = CARD.padY + 9;
-    let right = cardPadLeft(o) + keyWidth + (key ? 10 : 0);
-    if (key) inner += `<text x="${cardPadLeft(o)}" y="${n(headerBaseline)}" font-family="${escapeXml(fontFamily(o.font))}" font-size="9" font-weight="700" letter-spacing="0.3" ${fillStyle(K.cardMeta)}>${escapeXml(key)}</text>`;
-    if (projection?.state?.name) {
-      const stateText = projection.state.name;
-      const stateWidth = Math.min(measure(stateText, keyFont), Math.max(40, w - right - CARD.padX - 8));
-      const stateHeight = 14;
-      const stateFill = projection.state.category === 'canceled' ? K.canceledBadge : K.linkedBadge;
-      inner += `<g><rect x="${n(right)}" y="${n(CARD.padY - 1)}" width="${n(stateWidth + 10)}" height="${stateHeight}" rx="3" ${fillStyle(stateFill)}/>`;
-      inner += `<text x="${n(right + 5)}" y="${n(headerBaseline)}" font-family="${escapeXml(fontFamily(o.font))}" font-size="9" font-weight="600" ${fillStyle(K.linkedBadgeInk)}>${escapeXml(clip(stateText, keyFont, stateWidth))}</text></g>`;
-      right += stateWidth + 18;
-      const lane = o.parent ? ctx.get(o.parent) : undefined;
-      const container = lane?.parent ? ctx.get(lane.parent) : undefined;
-      const map = container?.type === 'container' ? (container as BaseObj & { ext?: { map?: Record<string, string> } }).ext?.map : undefined;
-      const laneStateKey = lane?.type === 'lane' ? map?.[lane.id] : undefined;
-      const stateUnmapped = lane?.type === 'lane' && (!laneStateKey || laneStateKey !== projection.state.key);
-      if (stateUnmapped) {
-        const text = 'Unmapped state';
-        const markerWidth = measure(text, keyFont);
-        inner += `<g><rect x="${n(right)}" y="${n(CARD.padY - 1)}" width="${n(markerWidth + 10)}" height="${stateHeight}" rx="3" ${fillStyle(K.unmappedBadge)}/>`;
-        inner += `<text x="${n(right + 5)}" y="${n(headerBaseline)}" font-family="${escapeXml(fontFamily(o.font))}" font-size="9" font-weight="600" ${fillStyle(K.linkedBadgeInk)}>${escapeXml(text)}</text></g>`;
-      }
-    }
+    const state = projection?.state;
+    const lane = o.parent ? ctx.get(o.parent) : undefined;
+    const container = lane?.parent ? ctx.get(lane.parent) : undefined;
+    const map = container?.type === 'container' ? (container as BaseObj & { ext?: { map?: Record<string, string> } }).ext?.map : undefined;
+    const laneStateKey = lane?.type === 'lane' ? map?.[lane.id] : undefined;
+    unmappedChip = Boolean(state?.name && lane?.type === 'lane' && (!laneStateKey || laneStateKey !== state.key));
+    inner += linkedCardHeaderMarkup({
+      key: o.extKey ?? '',
+      state: state?.name ? { key: state.key ?? '', name: state.name, category: (state.category ?? 'unstarted') as TrackerStateCategory } : null,
+      laneStateKey,
+      width: w,
+      height: h,
+      unmapped: unmappedChip,
+      zoom: ctx.zoom ?? 1,
+      priority: (projection as { priority?: TrackerPriority } | undefined)?.priority,
+    });
     y += CARD.titleLine;
   }
   if (ctx.editingId !== o.id) {

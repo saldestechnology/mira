@@ -353,12 +353,36 @@ describe('linked card projection and entry gating', () => {
     } as BaseObj;
     const objects = new Map([[container.id, container], [lane.id, lane]]);
     const markup = objectMarkup(card, { get: (id) => objects.get(id) });
-    expect(markup).toContain('TAB-23');
+    expect(markup).toContain('>TAB-</tspan>');
+    expect(markup).toContain('>23</tspan>');
+    expect(markup).toContain('height="100" fill="var(--canvas-ink)"');
     expect(markup).toContain('Fix &lt;script&gt; &amp; login');
     expect(markup).toContain('Review &lt;img&gt;&amp;');
-    expect(markup).toContain('Unmapped state');
+    expect(markup).toContain('trk-unmapped-state');
+    expect(markup).toContain('State not mapped to a lane');
+    expect(markup).not.toContain('Unmapped state');
     expect(markup).not.toContain('<script>');
     expect(markup).not.toContain('<img>');
+  });
+
+  it('draws the designer header for a linked card: marker, split key, state glyph and name, no chip when the lane matches', () => {
+    const container = {
+      id: 'kanban', type: 'container', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a0', layout: 'kanban',
+      ext: { provider: 'tabula', tracker: 'tracker-1', map: { 'lane-1': 'in_review' } },
+    } as BaseObj;
+    const lane = { id: 'lane-1', type: 'lane', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a1', parent: 'kanban', rank: 'a0@kanban' } as BaseObj;
+    const card = {
+      id: 'card-2', type: 'card', x: 0, y: 0, w: 250, h: 100, rotation: 0, z: 'a2', parent: 'lane-1', rank: 'a0@lane-1',
+      text: 'x', extProvider: 'tabula', extKey: 'TAB-7', trackerId: 'tracker-1',
+      tracker: { ticketId: 't7', ticketKey: 'TAB-7', title: 'Seven', state: { id: 's', key: 'in_review', name: 'Review', category: 'started' }, assignee: null, labels: [], priority: 'high', due: null, projectionSeq: 1 },
+    } as BaseObj;
+    const objects = new Map([[container.id, container], [lane.id, lane]]);
+    const markup = objectMarkup(card, { get: (id) => objects.get(id) });
+    expect(markup).toContain('trk-linked-card-header');
+    expect(markup).toContain('trk-linked-key');
+    expect(markup).toContain('trk-linked-state');
+    expect(markup).toContain('trk-priority');
+    expect(markup).not.toContain('Unmapped state');
   });
 
   it('shows link actions only when tracker access, the relevant registration, and an app handler exist', () => {

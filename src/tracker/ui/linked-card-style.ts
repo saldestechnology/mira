@@ -8,9 +8,13 @@ export interface LinkedCardHeaderOptions {
   state: LinkedCardState | null;
   laneStateKey: string | null | undefined;
   width: number;
+  /** The card's height; without it the marker is 100% of the nearest viewport, which is only right inside a card-sized svg. */
+  height?: number;
   zoom: number;
   offline?: boolean;
   blocked?: boolean;
+  /** The ticket's state has no mapped lane here: the state group in the header is outlined with a dashed hairline. */
+  unmapped?: boolean;
   priority?: TrackerPriority;
 }
 
@@ -57,6 +61,7 @@ export function linkedCardHeaderMarkup(options: LinkedCardHeaderOptions): string
     const stateNameWidth = showName ? Math.min(measureText(options.state.name), maxNameWidth) : 0;
     const groupWidth = 12 + (stateNameWidth > 0 ? 6 + stateNameWidth : 0);
     const x = Math.max(12 + keyWidth + 10, right - groupWidth);
+    if (options.unmapped) parts.push(`<rect class="trk-unmapped-state" x="${number(x - 4.5)}" y="4.5" width="${number(groupWidth + 9)}" height="19" rx="var(--radius-xs)" fill="none" stroke="var(--graphite)" stroke-width="1" stroke-dasharray="3 2"><title>State not mapped to a lane</title></rect>`);
     parts.push(stateGlyphMarkup(options.state.category, options.state.key, { x, y: 8, size: 12, className: 'trk-linked-state' }));
     if (stateNameWidth > 0) {
       parts.push(`<text class="trk-linked-state-name" x="${number(x + 18)}" y="17" textLength="${number(stateNameWidth)}" lengthAdjust="spacingAndGlyphs" font-family="var(--ui, 'Instrument Sans', sans-serif)" font-size="10" font-weight="600" fill="var(--canvas-ink)">${escapeXml(options.state.name)}</text>`);
@@ -64,7 +69,7 @@ export function linkedCardHeaderMarkup(options: LinkedCardHeaderOptions): string
   }
 
   const keyMarkup = `<text class="trk-linked-key" x="12" y="17" font-family="var(--ui, 'Instrument Sans', sans-serif)" font-size="11" font-weight="700" font-variant-numeric="tabular-nums"><tspan fill="var(--graphite)">${escapeXml(prefix)}</tspan><tspan fill="var(--canvas-ink)">${escapeXml(numberPart)}</tspan></text>`;
-  return `<g class="trk-linked-card-header" color="var(--canvas-ink)"><rect class="trk-linked-marker" x="0" y="0" width="3" height="100%" fill="var(--canvas-ink)"/>${keyMarkup}${parts.join('')}</g>`;
+  return `<g class="trk-linked-card-header" color="var(--canvas-ink)"><rect class="trk-linked-marker" x="0" y="0" width="3" height="${options.height !== undefined && Number.isFinite(options.height) ? number(options.height) : '100%'}" fill="var(--canvas-ink)"/>${keyMarkup}${parts.join('')}</g>`;
 }
 
 function warningGlyph(x: number, y: number): string {
