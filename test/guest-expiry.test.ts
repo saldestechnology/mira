@@ -228,8 +228,8 @@ describe('guest expiry and relay refusal', () => {
     expect(markGuestSessionEnded(first.guestId)).toBe(false);
   });
 
-  it('keeps signed-in board access unchanged when the relay refuses a connection', () => {
-    setSignedIn({ user: { id: 'u1', email: 'u@example.test', name: 'User', role: 'member' }, teams: [] });
+  it('keeps signed-in board access unchanged when the relay refuses a connection', async () => {
+    await setSignedIn({ user: { id: 'u1', email: 'u@example.test', name: 'User', role: 'member' }, teams: [] });
     const access = applyConnectionAccess(
       { store: new Store(new Y.Doc()), comments: new Comments(new Y.Doc()) },
       boardAccess('editor', null), authState(), 'access_removed', NOW,

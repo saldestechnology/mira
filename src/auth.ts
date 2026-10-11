@@ -84,7 +84,13 @@ export function onAuth(fn: (s: AuthState) => void): () => void {
 
 function commit(next: AuthState): AuthState {
   state = next;
-  for (const fn of listeners) fn(next);
+  for (const fn of Array.from(listeners)) {
+    try {
+      fn(next);
+    } catch {
+      /* One view must not prevent auth state from committing or reach other listeners. */
+    }
+  }
   return next;
 }
 
@@ -123,8 +129,10 @@ function clearIdentityMetadata() {
 }
 
 function clearUserChat(userId: string): Promise<void> {
-  const clear = resetChatForAuth ? resetChatForAuth(userId) : clearUserChatCache(userId);
-  return Promise.resolve(clear).catch(() => undefined);
+  return Promise.resolve()
+    .then(() => resetChatForAuth ? resetChatForAuth(userId) : clearUserChatCache(userId))
+    .then(() => undefined)
+    .catch(() => undefined);
 }
 
 function publishIdentity(userId: string | null) {

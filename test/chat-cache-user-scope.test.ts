@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../src/api';
 import {
-  clearChatCache, putOutbox, purgeOtherUsers, readChannel, readOutbox, writeChannel,
+  clearChatCache, deleteChannel, putOutbox, purgeOtherUsers, readChannel, readOutbox, writeChannel,
 } from '../src/chat-cache';
 import type { OutboxItem } from '../src/ui/chat-logic';
 
@@ -188,4 +188,15 @@ it('migrates unscoped rows away and stores, reads, and purges chat rows by accou
   expect(await readOutbox('user-a')).toEqual([]);
   expect((await readChannel('user-b', 'workspace/main'))?.messages.map((item) => item.text)).toEqual(['B text']);
   expect(await readOutbox('user-b')).toEqual([outboxItem('draft-b-123', 'B draft')]);
+});
+
+it('deletes only the denied account and channel cache row', async () => {
+  vi.stubGlobal('indexedDB', new MemoryIndexedDB() as unknown as IDBFactory);
+  await writeChannel('user-a', { key: 'workspace/main', messages: [message(1, 'A text')], savedAt: 1 });
+  await writeChannel('user-b', { key: 'workspace/main', messages: [message(2, 'B text')], savedAt: 2 });
+
+  await deleteChannel('user-a', 'workspace/main');
+
+  expect(await readChannel('user-a', 'workspace/main')).toBeUndefined();
+  expect((await readChannel('user-b', 'workspace/main'))?.messages.map((item) => item.text)).toEqual(['B text']);
 });

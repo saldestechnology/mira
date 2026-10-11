@@ -79,6 +79,9 @@ export const readChannel = (userId: string, key: string): Promise<CachedChannel 
 export const writeChannel = (userId: string, entry: CachedChannel): Promise<unknown> =>
   run(CHANNELS, 'readwrite', (s) => s.put({ ...entry, userId, key: scopedKey(userId, entry.key) }));
 
+export const deleteChannel = (userId: string, key: string): Promise<unknown> =>
+  run(CHANNELS, 'readwrite', (s) => s.delete(scopedKey(userId, key)));
+
 export const readOutbox = (userId: string): Promise<OutboxItem[]> =>
   run<StoredOutboxItem[]>(OUTBOX, 'readonly', (s) => s.getAll() as IDBRequest<StoredOutboxItem[]>).then((items) =>
     (items ?? []).filter((item) => item.userId === userId).map(({ key: _key, userId: _userId, ...item }) => item));

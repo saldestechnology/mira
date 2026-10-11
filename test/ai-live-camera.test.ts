@@ -360,8 +360,8 @@ describe('the live AI preview camera guard', () => {
     expectNoMovement(rig);
   });
 
-  it('allows the signed-in user run to arrive over the relay without moving the view', () => {
-    setSignedIn({ user: { id: 'viewer' } } as Parameters<typeof setSignedIn>[0]);
+  it('allows the signed-in user run to arrive over the relay without moving the view', async () => {
+    await setSignedIn({ user: { id: 'viewer' } } as Parameters<typeof setSignedIn>[0]);
     resetSignedIn = true;
     const rig = makeRig();
     snapshot(rig, [remoteRun('my-run', 'running', { byId: 'viewer' })]);

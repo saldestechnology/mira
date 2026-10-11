@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, type ChatMessage, type Me } from '../src/api';
+import { ApiError, api, type ChatMessage, type Me } from '../src/api';
 
 const cacheRig = vi.hoisted(() => {
   const channels = new Map<string, unknown>();
@@ -12,6 +12,7 @@ const cacheRig = vi.hoisted(() => {
     writeChannel: vi.fn<(userId: string, entry: { key: string }) => Promise<void>>(async (userId, entry) => {
       channels.set(key(userId, entry.key), { ...entry, userId });
     }),
+    deleteChannel: vi.fn<(userId: string, id: string) => Promise<void>>(async (userId, id) => { channels.delete(key(userId, id)); }),
     readOutbox: vi.fn<(userId: string) => Promise<unknown[]>>(async (userId) =>
       [...outbox.values()].filter((row) => row.userId === userId).map((row) => row.item)),
     putOutbox: vi.fn<(userId: string, item: { clientId: string }) => Promise<void>>(async (userId, item) => {
@@ -33,6 +34,7 @@ const cacheRig = vi.hoisted(() => {
 vi.mock('../src/chat-cache', () => ({
   readChannel: cacheRig.readChannel,
   writeChannel: cacheRig.writeChannel,
+  deleteChannel: cacheRig.deleteChannel,
   readOutbox: cacheRig.readOutbox,
   putOutbox: cacheRig.putOutbox,
   deleteOutbox: cacheRig.deleteOutbox,
@@ -41,7 +43,7 @@ vi.mock('../src/chat-cache', () => ({
   purgeOtherUsers: cacheRig.purgeOtherUsers,
 }));
 
-import { authState, initAuth, onAuth, setDemoMode, setSignedIn } from '../src/auth';
+import { authState, initAuth, onAuth, registerAuthChatReset, setDemoMode, setSignedIn, setSignedOut } from '../src/auth';
 import { openChat, resetChat, totalUnread, watchChat, type BoardChat } from '../src/chat';
 import type { OutboxItem } from '../src/ui/chat-logic';
 
@@ -149,6 +151,7 @@ beforeEach(async () => {
   cacheRig.outbox.clear();
   cacheRig.readChannel.mockClear();
   cacheRig.writeChannel.mockClear();
+  cacheRig.deleteChannel.mockClear();
   cacheRig.readOutbox.mockReset().mockImplementation(async (userId: string) =>
     [...cacheRig.outbox.values()].filter((row) => row.userId === userId).map((row) => row.item));
   cacheRig.putOutbox.mockClear();
@@ -229,7 +232,7 @@ describe('chat account privacy', () => {
     const outbound = deferred<unknown>();
     const identityObserver = new BroadcastChannel('driftboard:auth');
     identityObserver.onmessage = (event) => outbound.resolve(event.data);
-    setSignedIn(me('user-a'));
+    await setSignedIn(me('user-a'));
     expect(await outbound.promise).toBe('user-a');
     identityObserver.close();
     watchChat(life.signal);
@@ -283,7 +286,7 @@ describe('chat account privacy', () => {
     openChat('workspace', 'main', life.signal);
     expect(cacheRig.readOutbox).toHaveBeenCalledWith('user-a');
     await resetChat('user-a');
-    setSignedIn(me('user-b'));
+    await setSignedIn(me('user-b'));
     read.resolve([{
       clientId: 'draft-a-123', kind: 'workspace', ref: 'main', text: 'private A draft', replyTo: null, objectId: null,
       createdLocal: 1, state: 'queued',
@@ -345,6 +348,7 @@ describe('chat account privacy', () => {
     await whenPageCalls(1);
     await initial;
     await Promise.resolve();
+    await Promise.resolve();
     const socket = lastSocket();
     socket.open();
     socket.say({ t: 'hello', readOnly: false, channels: [] });
@@ -352,6 +356,7 @@ describe('chat account privacy', () => {
     chat.setVisible(true);
     chat.setVisible(false);
     chat.setVisible(true);
+    await whenPageCalls(2);
     socket.say({ t: 'message', kind: 'workspace', ref: 'main', message: message(9, 'live during both opens') });
     const expectedLastPage = deferredPages.length === 1 ? 5 : 6;
     const settled = new Promise<void>((resolve) => {
@@ -397,5 +402,281 @@ describe('chat account privacy', () => {
       else await finished;
     }
     expect(chat.view().messages.some((item) => item.id === 500)).toBe(true);
+  });
+
+  it('discards edit, delete and reaction replies after the request identity changes', async () => {
+    const userBMessages = [message(1, 'B edit target'), message(2, 'B delete target'), message(3, 'B reaction target')];
+    pageHandler = async (call) => ({ messages: call === 1
+      ? [message(1, 'A edit target'), message(2, 'A delete target'), message(3, 'A reaction target')]
+      : userBMessages, next: null });
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    await whenPageCalls(1);
+    await loaded;
+
+    const editReply = deferred<{ message: ChatMessage }>();
+    const deleteReply = deferred<void>();
+    const reactionReply = deferred<{ id: number; reactions: { emoji: string; userIds: string[] }[] }>();
+    vi.spyOn(api, 'chatEdit').mockReturnValue(editReply.promise);
+    vi.spyOn(api, 'chatDelete').mockReturnValue(deleteReply.promise);
+    vi.spyOn(api, 'chatReact').mockReturnValue(reactionReply.promise);
+    cacheRig.writeChannel.mockClear();
+
+    const pending = Promise.all([chat.edit(1, 'late edit'), chat.remove(2), chat.react(3, 'x', true)]);
+    expect(api.chatEdit).toHaveBeenCalledWith(1, 'late edit');
+    expect(api.chatDelete).toHaveBeenCalledWith(2);
+    expect(api.chatReact).toHaveBeenCalledWith(3, 'x', true);
+    await setSignedIn(me('user-b'));
+    const reloaded = waitForLoad(chat);
+    chat.setVisible(false);
+    chat.setVisible(true);
+    await whenPageCalls(2);
+    await reloaded;
+    cacheRig.writeChannel.mockClear();
+
+    editReply.resolve({ message: message(1, 'private late edit') });
+    deleteReply.resolve();
+    reactionReply.resolve({ id: 3, reactions: [{ emoji: 'x', userIds: ['user-a'] }] });
+    await pending;
+
+    expect(chat.view().messages).toEqual(userBMessages);
+    expect(cacheRig.writeChannel).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['closed', { t: 'closed' }],
+    ['denied', { t: 'denied', reason: 'removed' }],
+  ])('clears history, cache, unread and drafts on a definitive %s frame', async (_name, frame) => {
+    pageHandler = async () => ({ messages: [message(1, 'private history')], next: null });
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    await whenPageCalls(1);
+    await loaded;
+    const socket = lastSocket();
+    socket.open();
+    socket.say({ t: 'hello', readOnly: false, channels: [{ kind: 'workspace', ref: 'main', unread: 5, mentions: 2, lastId: 0 }] });
+    chat.setVisible(false);
+    vi.stubGlobal('navigator', { onLine: false });
+    chat.send('private pending draft', null);
+    expect(chat.view().pending).toHaveLength(1);
+
+    const rendered: { lost: boolean; messages: ChatMessage[]; pending: unknown[] }[] = [];
+    chat.onChange(() => rendered.push({ lost: chat.view().lost, messages: chat.view().messages, pending: chat.view().pending }));
+    socket.say({ ...frame, kind: 'workspace', ref: 'main' });
+    socket.say({ t: 'unread', kind: 'workspace', ref: 'main', unread: 9, mentions: 4 });
+
+    expect(chat.view()).toMatchObject({ lost: true, messages: [], pending: [], unread: 0, mentions: 0 });
+    expect(totalUnread()).toEqual({ unread: 0, mentions: 0 });
+    expect(cacheRig.deleteChannel).toHaveBeenCalledWith('user-a', 'workspace/main');
+    expect(cacheRig.channels.has('user-a\u0000workspace/main')).toBe(false);
+    expect(cacheRig.deleteOutbox).toHaveBeenCalled();
+    expect(rendered.some((view) => view.lost && !view.messages.length && !view.pending.length)).toBe(true);
+  });
+
+  it('clears restored history and its cache row when REST definitively denies the channel', async () => {
+    cacheRig.channels.set('user-a\u0000workspace/main', {
+      userId: 'user-a', key: 'workspace/main', messages: [message(1, 'private cached history')], savedAt: 1,
+    });
+    pageHandler = async () => { throw new ApiError(404, 'not_found', 'hidden'); };
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    vi.stubGlobal('navigator', { onLine: false });
+    chat.send('private pending draft', null);
+    await vi.waitFor(() => expect(cacheRig.readChannel).toHaveBeenCalledWith('user-a', 'workspace/main'));
+    await whenPageCalls(1);
+    await loaded;
+
+    expect(chat.view()).toMatchObject({ lost: true, messages: [], pending: [], savedOnly: false });
+    expect(cacheRig.deleteChannel).toHaveBeenCalledWith('user-a', 'workspace/main');
+    expect(cacheRig.deleteOutbox).toHaveBeenCalled();
+    expect(cacheRig.channels.has('user-a\u0000workspace/main')).toBe(false);
+  });
+
+  it('clears saved history and drafts when REST expires the chat session', async () => {
+    cacheRig.channels.set('user-a\u0000workspace/main', {
+      userId: 'user-a', key: 'workspace/main', messages: [message(1, 'private cached history')], savedAt: 1,
+    });
+    pageHandler = async () => { throw new ApiError(401, 'signed_out', 'expired'); };
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    vi.stubGlobal('navigator', { onLine: false });
+    chat.send('private pending draft', null);
+    await vi.waitFor(() => expect(cacheRig.readChannel).toHaveBeenCalledWith('user-a', 'workspace/main'));
+    await whenPageCalls(1);
+    await loaded;
+
+    expect(chat.view()).toMatchObject({ signedOut: true, messages: [], pending: [] });
+    expect(cacheRig.clearChatCache).toHaveBeenCalled();
+    expect(cacheRig.channels.size).toBe(0);
+  });
+
+  it('clears messages, cache, unread and drafts after a WebSocket 4401', async () => {
+    pageHandler = async () => ({ messages: [message(1, 'private history')], next: null });
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    await whenPageCalls(1);
+    await loaded;
+    const socket = lastSocket();
+    socket.open();
+    socket.say({ t: 'hello', readOnly: false, channels: [{ kind: 'workspace', ref: 'main', unread: 5, mentions: 2, lastId: 0 }] });
+    chat.setVisible(false);
+    vi.stubGlobal('navigator', { onLine: false });
+    chat.send('private pending draft', null);
+    cacheRig.clearChatCache.mockClear();
+    const rendered: { signedOut: boolean; messages: ChatMessage[]; pending: unknown[] }[] = [];
+    chat.onChange(() => rendered.push({ signedOut: chat.view().signedOut, messages: chat.view().messages, pending: chat.view().pending }));
+
+    socket.onclose?.({ code: 4401 });
+
+    expect(chat.view()).toMatchObject({ signedOut: true, messages: [], pending: [], unread: 0, mentions: 0 });
+    expect(totalUnread()).toEqual({ unread: 0, mentions: 0 });
+    expect(cacheRig.clearChatCache).toHaveBeenCalled();
+    expect(cacheRig.channels.size).toBe(0);
+    expect(rendered.some((view) => view.signedOut && !view.messages.length && !view.pending.length)).toBe(true);
+  });
+
+  it('clears history and chat cache on sign-out', async () => {
+    pageHandler = async () => ({ messages: [message(1, 'private history')], next: null });
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    await whenPageCalls(1);
+    await loaded;
+    cacheRig.clearChatCache.mockClear();
+    setSignedOut();
+
+    expect(chat.view()).toMatchObject({ messages: [], pending: [], signedOut: true });
+    expect(totalUnread()).toEqual({ unread: 0, mentions: 0 });
+    expect(cacheRig.clearChatCache).toHaveBeenCalled();
+    expect(cacheRig.channels.size).toBe(0);
+  });
+
+  it('applies pending deletes and edits immediately after cache restore and keeps them on REST failure', async () => {
+    const savedRead = deferred<unknown>();
+    const restPage = deferred<ChatPage>();
+    cacheRig.readChannel.mockReturnValue(savedRead.promise);
+    pageHandler = async () => restPage.promise;
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    await vi.waitFor(() => expect(cacheRig.readChannel).toHaveBeenCalledWith('user-a', 'workspace/main'));
+    const socket = lastSocket();
+    socket.open();
+    socket.say({ t: 'delete', kind: 'workspace', ref: 'main', id: 1, by: 'moderator' });
+    socket.say({ t: 'edit', kind: 'workspace', ref: 'main', message: message(2, 'new cached text', { editedAt: 22 }) });
+    savedRead.resolve({ key: 'workspace/main', messages: [message(1, 'old cached text'), message(2, 'old edit')], savedAt: 1 });
+    await whenPageCalls(1);
+
+    expect(chat.view().messages).toMatchObject([
+      { id: 1, text: '', deleted: true, deletedBy: 'moderator' },
+      { id: 2, text: 'new cached text', editedAt: 22 },
+    ]);
+    restPage.reject(new Error('offline'));
+    await loaded;
+    expect(chat.view().messages).toMatchObject([
+      { id: 1, text: '', deleted: true, deletedBy: 'moderator' },
+      { id: 2, text: 'new cached text', editedAt: 22 },
+    ]);
+  });
+
+  it('reapplies a pending tombstone on REST failure when a live message arrives after an empty cache restore', async () => {
+    const savedRead = deferred<unknown>();
+    const restPage = deferred<ChatPage>();
+    cacheRig.readChannel.mockReturnValue(savedRead.promise);
+    pageHandler = async () => restPage.promise;
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    await vi.waitFor(() => expect(cacheRig.readChannel).toHaveBeenCalledWith('user-a', 'workspace/main'));
+    const socket = lastSocket();
+    socket.open();
+    socket.say({ t: 'delete', kind: 'workspace', ref: 'main', id: 4, by: 'moderator' });
+    savedRead.resolve(undefined);
+    await whenPageCalls(1);
+    socket.say({ t: 'message', kind: 'workspace', ref: 'main', message: message(4, 'live stale text') });
+    expect(chat.view().messages).toMatchObject([{ id: 4, text: 'live stale text', deleted: false }]);
+
+    restPage.reject(new Error('offline'));
+    await loaded;
+    expect(chat.view().messages).toMatchObject([{ id: 4, text: '', deleted: true, deletedBy: 'moderator' }]);
+  });
+
+  it('drops cached rows outside the reconnect page set even when that page overlaps the newest cached id', async () => {
+    const catchUpPage = deferred<ChatPage>();
+    pageHandler = async (call) => call === 1
+      ? { messages: [message(1, 'purged old row'), message(10, 'cached newest row')], next: 0 }
+      : catchUpPage.promise;
+    const chat = openChat('workspace', 'main', life.signal);
+    const loaded = waitForLoad(chat);
+    chat.setVisible(true);
+    await whenPageCalls(1);
+    await loaded;
+    const socket = lastSocket();
+    socket.open();
+    socket.say({ t: 'hello', readOnly: false, channels: [] });
+    socket.say({ t: 'hello', readOnly: false, channels: [] });
+    await whenPageCalls(2);
+    const caughtUp = nextChange(chat);
+    catchUpPage.resolve({ messages: [message(9), message(10), message(11)], next: 7 });
+    await caughtUp;
+
+    expect(chat.view().messages.map((item) => item.id)).toEqual([9, 10, 11]);
+  });
+
+  it('queues a channel reload behind reconnect catch-up so their history requests do not overlap', async () => {
+    const catchUpPage = deferred<ChatPage>();
+    const reloadPage = deferred<ChatPage>();
+    pageHandler = async (call) => {
+      if (call === 1) return { messages: [message(1)], next: null };
+      if (call === 2) return catchUpPage.promise;
+      return reloadPage.promise;
+    };
+    const chat = openChat('workspace', 'main', life.signal);
+    const initial = waitForLoad(chat);
+    chat.setVisible(true);
+    await whenPageCalls(1);
+    await initial;
+    const socket = lastSocket();
+    socket.open();
+    socket.say({ t: 'hello', readOnly: false, channels: [] });
+    socket.say({ t: 'hello', readOnly: false, channels: [] });
+    await whenPageCalls(2);
+    chat.setVisible(false);
+    chat.setVisible(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(pageCalls).toBe(2);
+
+    socket.say({ t: 'message', kind: 'workspace', ref: 'main', message: message(20, 'live during catch-up') });
+    catchUpPage.resolve({ messages: [message(10)], next: null });
+    await whenPageCalls(3);
+    const reloaded = nextChange(chat);
+    reloadPage.resolve({ messages: [message(10), message(20, 'live during catch-up')], next: null });
+    await reloaded;
+    expect(chat.view().messages.map((item) => item.id)).toEqual([10, 20]);
+  });
+
+  it('finishes sign-in despite synchronous reset and change-listener exceptions', async () => {
+    const chat = openChat('workspace', 'main', life.signal);
+    const offChat = chat.onChange(() => { throw new Error('view failed'); });
+    const sawChange = vi.fn<() => void>();
+    const offObserved = chat.onChange(sawChange);
+    const offAuth = onAuth(() => { throw new Error('auth view failed'); });
+    registerAuthChatReset(() => { throw new Error('reset failed'); });
+    try {
+      await expect(setSignedIn(me('user-b'))).resolves.toBeUndefined();
+      expect(authState()).toMatchObject({ mode: 'signed-in', me: { user: { id: 'user-b' } } });
+      expect(sawChange).toHaveBeenCalled();
+    } finally {
+      offChat();
+      offObserved();
+      offAuth();
+      registerAuthChatReset((userId) => resetChat(userId));
+    }
   });
 });
