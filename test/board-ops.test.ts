@@ -1497,3 +1497,24 @@ describe('server-side linked kanban projection plans', () => {
     }
   });
 });
+
+describe('server-owned tracker fields over MCP', () => {
+  const fields = ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState'];
+
+  it('refuses them on create_objects', () => {
+    for (const field of fields) {
+      const d = new Y.Doc();
+      const err = failure(() => planCreate(d, [{ type: 'sticky', x: 0, y: 0, text: 'x', [field]: 'forged' }], who));
+      expect(err.path).toBe(`objects[0].${field}`);
+    }
+  });
+
+  it('refuses them on update_objects', () => {
+    for (const field of fields) {
+      const d = new Y.Doc();
+      seed(d, box('b1'));
+      const err = failure(() => planUpdate(d, [{ id: 'b1', [field]: 'forged' }], { now: 2000 }));
+      expect(err.path).toBe(`updates[0].${field}`);
+    }
+  });
+});
