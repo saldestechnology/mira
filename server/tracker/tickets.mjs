@@ -1,6 +1,7 @@
-import { ticketAccess, requireTicketRead, requireTicketWrite } from './access.mjs';
+import { ticketAccess, requireTicketRead, requireTicketWrite, boardAccessForDirectory } from './access.mjs';
 import { appendTicketEvent } from './events.mjs';
 import { fanOut } from './notify.mjs';
+import { enqueueTicketProjection } from './projection.mjs';
 import { allocateTicket } from './ids.mjs';
 import { listTickets, refreshTicketSearch, searchTickets } from './search.mjs';
 import {
@@ -87,7 +88,19 @@ function relationRows(db, actor, ticketId) {
   });
 }
 
-function ticketJson(db, row, actor) {
+function cardLinks(db, directory, ticketId, actor) {
+  const userId = actorInfo(actor).userId;
+  if (!userId || typeof directory?.boardRole !== 'function') return [];
+  return db.prepare(
+    `SELECT l.board_id, l.kanban_id, l.card_id, l.id AS link_id
+       FROM ticket_links l JOIN kanban_tracker_links k
+         ON k.board_id = l.board_id AND k.kanban_id = l.kanban_id AND k.removed_at IS NULL
+      WHERE l.ticket_id = ? AND l.removed_at IS NULL ORDER BY l.created_at, l.id`,
+  ).all(ticketId).filter((link) => directory.boardRole(link.board_id, userId) !== null)
+    .map((link) => ({ kind: 'card', boardId: link.board_id, kanbanId: link.kanban_id, cardId: link.card_id, linkId: link.link_id }));
+}
+
+function ticketJson(db, row, actor, directory) {
   const assignee = row.assignee_user_id
     ? db.prepare('SELECT name FROM users WHERE id = ?').get(row.assignee_user_id)
     : null;
@@ -121,7 +134,7 @@ function ticketJson(db, row, actor) {
     due: row.due_date ?? null,
     parent: parent?.key ?? null,
     relations: relationRows(db, actor, row.id),
-    links: [],
+    links: cardLinks(db, directory, row.id, actor),
     aliases: aliases(db, row.id),
     archivedAt: row.archived_at ?? null,
     createdAt: row.created_at,
@@ -130,9 +143,9 @@ function ticketJson(db, row, actor) {
   };
 }
 
-function visibleRow(db, actor, reference) {
+function visibleRow(db, actor, reference, directory) {
   const row = ticketRow(db, reference);
-  requireTicketRead(actor, row);
+  requireTicketRead(actor, row, { boardAccess: boardAccessForDirectory(directory) });
   return row;
 }
 
@@ -312,7 +325,7 @@ export function createTicket({
   const prior = idempotentTicket(db, actor, source, idempotencyKey);
   if (prior) {
     requireTicketRead(actor, prior);
-    return ticketJson(db, ticketRow(db, prior.id), actor);
+    return ticketJson(db, ticketRow(db, prior.id), actor, directory);
   }
   const cleanTitle = cleanText(title, { path: 'title', min: 1, max: 200, singleLine: true });
   const cleanDescription = cleanText(description, { path: 'description', max: 20_000, trim: false });
@@ -369,19 +382,19 @@ export function createTicket({
   });
   const row = ticketRow(db, allocated.ticketId ?? allocated.key);
   requireTicketRead(actor, row);
-  return ticketJson(db, row, actor);
+  return ticketJson(db, row, actor, directory);
 }
 
 /** @param {any} options */
 export function getTicket({ directory, db: dbArg, actor, key } = {}) {
   const db = getDb({ directory, db: dbArg });
-  const row = visibleRow(db, actor, key);
-  return ticketJson(db, row, actor);
+  const row = visibleRow(db, actor, key, directory);
+  return ticketJson(db, row, actor, directory);
 }
 
 /** Add list/detail counts with one query for the ticket ids in a page. */
 /** @param {any} options */
-export function addTicketRowExtras({ directory, db: dbArg, tickets = [] } = {}) {
+export function addTicketRowExtras({ directory, db: dbArg, actor, tickets = [] } = {}) {
   if (!Array.isArray(tickets) || !tickets.length) return tickets;
   const db = getDb({ directory, db: dbArg });
   const ids = [...new Set(tickets.map((ticket) => ticket?.id).filter((id) => typeof id === 'string' && id))];
@@ -409,7 +422,11 @@ export function addTicketRowExtras({ directory, db: dbArg, tickets = [] } = {}) 
     blocked: Boolean(row.blocked),
     prs: null,
   }]));
-  return tickets.map((ticket) => ({ ...ticket, ...byId.get(ticket.id) }));
+  return tickets.map((ticket) => ({
+    ...ticket,
+    ...byId.get(ticket.id),
+    links: ticket.links ?? cardLinks(db, directory, ticket.id, actor),
+  }));
 }
 
 export { listTickets, searchTickets };
@@ -463,7 +480,7 @@ export function updateTicket({
   if (ifUpdatedSeq !== undefined && (!Number.isInteger(ifUpdatedSeq) || ifUpdatedSeq < 0)) throw invalid('ifUpdatedSeq', 'Must be a non-negative event sequence');
 
   return inTransaction({ directory, db }, () => {
-    const row = visibleRow(db, actor, key);
+    const row = visibleRow(db, actor, key, directory);
     requireTicketWrite(actor, row);
     const before = {};
     const after = {};
@@ -569,7 +586,7 @@ export function updateTicket({
         columns.push({ column: 'archived_at', value: patch.archived ? now : null });
       }
     }
-    if (!changed.length) return ticketJson(db, row, actor);
+    if (!changed.length) return ticketJson(db, row, actor, directory);
     if (ifUpdatedSeq !== undefined && row.updated_seq !== ifUpdatedSeq) {
       throw conflict(`Ticket changed since sequence ${ifUpdatedSeq}; current sequence is ${row.updated_seq}`, 'ifUpdatedSeq');
     }
@@ -584,6 +601,7 @@ export function updateTicket({
     const seq = appendTicketEvent({ db, ticketId: row.id, eventType, actor, source, createdAt: now, before, after, details });
     fanOut({ db, ticketId: row.id, eventId: seq, eventType, actor, createdAt: now });
     db.prepare('UPDATE tickets SET updated_seq = ? WHERE id = ?').run(seq, row.id);
+    enqueueTicketProjection({ db, ticketId: row.id, eventSeq: seq, now });
     const info = actorInfo(actor);
     for (const field of changed) db.prepare(
       `INSERT INTO ticket_field_versions (ticket_id, field, event_seq, actor_type, actor_id)
@@ -591,7 +609,7 @@ export function updateTicket({
          event_seq = excluded.event_seq, actor_type = excluded.actor_type, actor_id = excluded.actor_id`,
     ).run(row.id, field, seq, info.type, info.id);
     refreshTicketSearch(db, row.id);
-    return ticketJson(db, ticketRow(db, row.id), actor);
+    return ticketJson(db, ticketRow(db, row.id), actor, directory);
   });
 }
 
@@ -602,12 +620,12 @@ export function transitionTicket({ directory, db: dbArg, actor, key, state: targ
   if (typeof targetState !== 'string' || !targetState.trim()) throw invalid('state', 'Must be a state name or key');
   if (ifUpdatedSeq !== undefined && (!Number.isInteger(ifUpdatedSeq) || ifUpdatedSeq < 0)) throw invalid('ifUpdatedSeq', 'Must be a non-negative event sequence');
   return inTransaction({ directory, db }, () => {
-    const row = visibleRow(db, actor, key);
+    const row = visibleRow(db, actor, key, directory);
     requireTicketWrite(actor, row);
     if (row.archived_at !== null) throw conflict('Archived tickets cannot be transitioned');
     const target = stateByReference(db, targetState);
     if (!target) throw invalid('state', 'No active workflow state matches this name or key');
-    if (target.id === row.state_id) return ticketJson(db, row, actor);
+    if (target.id === row.state_id) return ticketJson(db, row, actor, directory);
     if (ifUpdatedSeq !== undefined && row.updated_seq !== ifUpdatedSeq) {
       throw conflict(`Ticket changed since sequence ${ifUpdatedSeq}; current sequence is ${row.updated_seq}`, 'ifUpdatedSeq');
     }
@@ -617,13 +635,14 @@ export function transitionTicket({ directory, db: dbArg, actor, key, state: targ
     const seq = appendTicketEvent({ db, ticketId: row.id, eventType: 'transitioned', actor, source, createdAt: now, before, after });
     fanOut({ db, ticketId: row.id, eventId: seq, eventType: 'transitioned', actor, createdAt: now });
     db.prepare('UPDATE tickets SET updated_seq = ? WHERE id = ?').run(seq, row.id);
+    enqueueTicketProjection({ db, ticketId: row.id, eventSeq: seq, now });
     const info = actorInfo(actor);
     db.prepare(
       `INSERT INTO ticket_field_versions (ticket_id, field, event_seq, actor_type, actor_id) VALUES (?, 'state', ?, ?, ?)
        ON CONFLICT(ticket_id, field) DO UPDATE SET event_seq = excluded.event_seq, actor_type = excluded.actor_type, actor_id = excluded.actor_id`,
     ).run(row.id, seq, info.type, info.id);
     refreshTicketSearch(db, row.id);
-    return ticketJson(db, ticketRow(db, row.id), actor);
+    return ticketJson(db, ticketRow(db, row.id), actor, directory);
   });
 }
 
@@ -631,7 +650,7 @@ export function transitionTicket({ directory, db: dbArg, actor, key, state: targ
 export function commentTicket({ directory, db: dbArg, actor, key, body, clientId: rawClientId = null, source = 'app', readOnly = () => false, now = Date.now() } = {}) {
   requireWritable(readOnly);
   const db = getDb({ directory, db: dbArg });
-  const row = visibleRow(db, actor, key);
+  const row = visibleRow(db, actor, key, directory);
   requireTicketWrite(actor, row);
   if (row.archived_at !== null) throw conflict('Archived tickets cannot receive comments');
   if (rawClientId !== null && (typeof rawClientId !== 'string' || codePointLength(rawClientId) < 1 || codePointLength(rawClientId) > 128)) {
@@ -672,6 +691,7 @@ export function commentTicket({ directory, db: dbArg, actor, key, body, clientId
     });
     fanOut({ db, ticketId: row.id, eventId: seq, eventType: 'commented', actor, createdAt: now });
     db.prepare('UPDATE tickets SET updated_at = ?, updated_seq = ? WHERE id = ?').run(now, seq, row.id);
+    enqueueTicketProjection({ db, ticketId: row.id, eventSeq: seq, now });
     refreshTicketSearch(db, row.id);
     return { id: commentId, ticketId: row.id, actorType: info.type, actorId: info.id, author, body: cleanBody, createdAt: now };
   });
@@ -706,7 +726,7 @@ function commentResult(row) {
 export function editTicketComment({ directory, db: dbArg, actor, key, commentId, body, source = 'app', readOnly = () => false, now = Date.now() } = {}) {
   requireWritable(readOnly);
   const db = getDb({ directory, db: dbArg });
-  const ticket = visibleRow(db, actor, key);
+  const ticket = visibleRow(db, actor, key, directory);
   requireTicketWrite(actor, ticket);
   const cleanBody = cleanText(body, { path: 'body', min: 1, max: 20_000, trim: false });
   if (!cleanBody.trim()) throw invalid('body', 'Comment cannot be empty');
@@ -725,6 +745,7 @@ export function editTicketComment({ directory, db: dbArg, actor, key, commentId,
       details: { commentId: row.id, length: codePointLength(cleanBody) },
     });
     db.prepare('UPDATE tickets SET updated_at = ?, updated_seq = ? WHERE id = ?').run(now, seq, ticket.id);
+    enqueueTicketProjection({ db, ticketId: ticket.id, eventSeq: seq, now });
     refreshTicketSearch(db, ticket.id);
     return commentResult(commentRow(db, ticket.id, row.id));
   });
@@ -734,7 +755,7 @@ export function editTicketComment({ directory, db: dbArg, actor, key, commentId,
 export function deleteTicketComment({ directory, db: dbArg, actor, key, commentId, source = 'app', readOnly = () => false, now = Date.now() } = {}) {
   requireWritable(readOnly);
   const db = getDb({ directory, db: dbArg });
-  const ticket = visibleRow(db, actor, key);
+  const ticket = visibleRow(db, actor, key, directory);
   requireTicketWrite(actor, ticket);
   const info = actorInfo(actor);
   return inTransaction({ directory, db }, () => {
@@ -752,6 +773,7 @@ export function deleteTicketComment({ directory, db: dbArg, actor, key, commentI
       details: { commentId: row.id },
     });
     db.prepare('UPDATE tickets SET updated_at = ?, updated_seq = ? WHERE id = ?').run(now, seq, ticket.id);
+    enqueueTicketProjection({ db, ticketId: ticket.id, eventSeq: seq, now });
     refreshTicketSearch(db, ticket.id);
     return commentResult(commentRow(db, ticket.id, row.id));
   });

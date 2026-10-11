@@ -194,6 +194,10 @@ describe('access tokens in the directory', () => {
       PRAGMA foreign_keys = OFF;
       DROP TABLE notifications;
       UPDATE schema_meta SET value = '0' WHERE key = 'min_reader';
+      DROP TABLE ticket_projection_outbox;
+      DROP TABLE ticket_links;
+      DROP TABLE kanban_state_mappings;
+      DROP TABLE kanban_tracker_links;
       DROP TABLE saved_views;
       DROP TABLE ticket_relations;
       DROP TABLE milestones;

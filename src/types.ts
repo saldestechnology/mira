@@ -23,6 +23,25 @@ export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';
 export type VAlign = 'top' | 'middle' | 'bottom';
+export type TrackerStateCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
+
+export interface TrackerProjection {
+  ticketId: Id;
+  ticketKey: string;
+  title: string;
+  state: { id: Id; key: string; name: string; category: TrackerStateCategory };
+  assignee: { userId: Id; name: string } | null;
+  labels: { id: Id; name: string; color: string | null }[];
+  priority: 'none' | 'urgent' | 'high' | 'medium' | 'low';
+  due: string | null;
+  projectionSeq: number;
+}
+
+export interface TrackerContainerExt {
+  provider: 'tabula';
+  tracker: Id;
+  map: Record<string, string>;
+}
 
 export type Head =
   | 'none' | 'arrow' | 'open' | 'triangle' | 'diamond' | 'diamond-open'
@@ -123,7 +142,11 @@ export interface BaseObj extends Partial<StyleFields> {
   // container (docs/kanban.md). `parent` says which lane or container, `rank` is `<key>@<parent>`.
   layout?: string;
   /** Server-written TABULA tracker link for a kanban container. */
-  ext?: { provider: 'tabula'; tracker: string; map: Record<string, string> };
+  ext?: TrackerContainerExt;
+  /** Compact server-written snapshot of the linked ticket; clients issue tracker commands to change it. */
+  tracker?: TrackerProjection;
+  /** Server marker for a linked ticket state that has no mapped lane. */
+  trackerUnmappedState?: boolean;
   rank?: string;
   laneW?: number;
   stage?: typeof STAGES[number];

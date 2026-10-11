@@ -9,7 +9,7 @@
 import type { Obj, ProposedBy } from './types';
 import { HEADS, SHAPE_KINDS } from './shapes';
 import { RELATIONS } from './uml';
-import { OWNER_KINDS, STAGES, isSafeHttpUrl } from '../shared/containers';
+import { LIMITS as CONTAINER_LIMITS, OWNER_KINDS, STAGES, isSafeHttpUrl, kanbanColor } from '../shared/containers';
 
 export { CARD_LINK_MAX, isSafeHttpUrl } from '../shared/containers';
 
@@ -28,6 +28,7 @@ const OWNER_KIND_SET = new Set<string>(OWNER_KINDS);
 const VISIBILITY = new Set(['+', '-', '#', '~', '']);
 const TRACKER_VIEWS = new Set(['inbox', 'my', 'all', 'board', 'projects']);
 const TRACKER_CATEGORIES = new Set(['backlog', 'unstarted', 'started', 'completed', 'canceled']);
+const TRACKER_PRIORITIES = new Set(['none', 'urgent', 'high', 'medium', 'low']);
 /** Every enumerated object field and its values; the template file check (src/custom-templates.ts) uses it too. */
 export const OBJ_ENUMS: Readonly<Record<string, ReadonlySet<string>>> = {
   kind: KINDS, route: ROUTES, startHead: HEAD_SET, endHead: HEAD_SET, dash: DASHES, align: ALIGNS, valign: VALIGNS,
@@ -98,27 +99,48 @@ function record(value: unknown): value is Record<string, unknown> {
 function cleanTrackerProjection(value: unknown): Record<string, unknown> | undefined {
   if (!record(value)) return undefined;
   const ticketId = typeof value.ticketId === 'string' && TRACKER_FIELD_RE.test(value.ticketId) ? value.ticketId : undefined;
-  if (!ticketId) return undefined;
+  const ticketKey = typeof value.ticketKey === 'string' && TRACKER_KEY_RE.test(value.ticketKey) ? value.ticketKey.toUpperCase() : undefined;
+  if (!ticketId || !ticketKey) return undefined;
   const title = typeof value.title === 'string' ? [...visibleText(value.title).replace(/\s+/g, ' ').trim()].slice(0, 200).join('') : '';
   const state = record(value.state) ? value.state : {};
   const cleanState = typeof state.name === 'string' && typeof state.category === 'string' && TRACKER_CATEGORIES.has(state.category)
     ? {
-      ...(typeof state.id === 'string' && TRACKER_FIELD_RE.test(state.id) ? { id: state.id } : {}),
-      ...(typeof state.key === 'string' && TRACKER_FIELD_RE.test(state.key) ? { key: state.key } : {}),
+      id: typeof state.id === 'string' && TRACKER_FIELD_RE.test(state.id) ? state.id : '',
+      key: typeof state.key === 'string' && TRACKER_FIELD_RE.test(state.key) ? state.key : '',
       name: [...visibleText(state.name).replace(/\s+/g, ' ').trim()].slice(0, 80).join(''),
       category: state.category,
     }
     : undefined;
-  return { ticketId, title, ...(cleanState ? { state: cleanState } : {}) };
+  if (!cleanState?.id || !cleanState.key || !cleanState.name) return undefined;
+  let assignee: Record<string, string> | null = null;
+  if (record(value.assignee) && typeof value.assignee.userId === 'string' && TRACKER_FIELD_RE.test(value.assignee.userId)
+    && typeof value.assignee.name === 'string') {
+    const name = [...visibleText(value.assignee.name).replace(/\s+/g, ' ').trim()].slice(0, 80).join('');
+    if (name) assignee = { userId: value.assignee.userId, name };
+  }
+  const labels = Array.isArray(value.labels) ? value.labels.slice(0, 20).flatMap((label) => {
+    if (!record(label) || typeof label.id !== 'string' || !TRACKER_FIELD_RE.test(label.id) || typeof label.name !== 'string') return [];
+    const name = [...visibleText(label.name).replace(/\s+/g, ' ').trim()].slice(0, 40).join('');
+    if (!name) return [];
+    const color = typeof label.color === 'string' ? kanbanColor(label.color, null) : null;
+    return [{ id: label.id, name, color }];
+  }) : [];
+  const due = value.due === null || (typeof value.due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.due)) ? value.due : null;
+  const projectionSeq = Number.isSafeInteger(value.projectionSeq) && (value.projectionSeq as number) >= 0 ? value.projectionSeq as number : 0;
+  const priority = typeof value.priority === 'string' && TRACKER_PRIORITIES.has(value.priority) ? value.priority : 'none';
+  return { ticketId, ticketKey, title, state: cleanState, assignee, labels, priority, due, projectionSeq };
 }
 
 function cleanContainerTrackerExt(value: unknown): Record<string, unknown> | undefined {
   if (!record(value) || value.provider !== 'tabula' || typeof value.tracker !== 'string' || !TRACKER_FIELD_RE.test(value.tracker)
     || !record(value.map)) return undefined;
-  const map: Record<string, string> = {};
+  const map: Record<string, string> = Object.create(null);
+  const states = new Set<string>();
   for (const [laneId, stateKey] of Object.entries(value.map)) {
-    if (!TRACKER_FIELD_RE.test(laneId) || typeof stateKey !== 'string' || !TRACKER_FIELD_RE.test(stateKey)) continue;
+    if (Object.keys(map).length >= CONTAINER_LIMITS.lanes) break;
+    if (!TRACKER_FIELD_RE.test(laneId) || typeof stateKey !== 'string' || !TRACKER_FIELD_RE.test(stateKey) || states.has(stateKey)) continue;
     map[laneId] = stateKey;
+    states.add(stateKey);
   }
   return { provider: 'tabula', tracker: value.tracker, map };
 }
@@ -167,11 +189,13 @@ export function safeObj<T extends Obj>(o: T): T {
     const projection = cleanTrackerProjection(out.tracker);
     if (projection) out.tracker = projection;
     else delete out.tracker;
+    if (typeof out.trackerUnmappedState !== 'boolean') delete out.trackerUnmappedState;
   } else {
     delete out.extProvider;
     delete out.extKey;
     delete out.extUrl;
     delete out.tracker;
+    delete out.trackerUnmappedState;
   }
   if (o.type === 'container') {
     const ext = cleanContainerTrackerExt(out.ext);

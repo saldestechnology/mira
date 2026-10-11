@@ -25,6 +25,7 @@ import { clientIpOf, clientIpReport } from './client-ip.mjs';
 import { OpsError } from './tracker/shared.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import { createTrackerRoutes } from './tracker/api-routes.mjs';
+import { createTrackerLinkRoutes } from './tracker/link-api-routes.mjs';
 import {
   JOIN_CODE_DEFAULT_HOURS, JOIN_CODE_DEFAULT_USES, JOIN_CODE_ERROR, JOIN_CODE_MAX_HOURS, JOIN_CODE_MAX_USES,
   generateJoinCode,
@@ -99,7 +100,61 @@ function idField(value, field) {
   return value;
 }
 
-function readJson(req, limit) {
+function duplicateJsonKeys(source) {
+  let index = 0;
+  const duplicates = [];
+  const skipSpace = () => { while (/\s/u.test(source[index] ?? '')) index++; };
+  const string = () => {
+    const start = index++;
+    while (index < source.length) {
+      if (source[index] === '\\') { index += 2; continue; }
+      if (source[index++] === '"') break;
+    }
+    return JSON.parse(source.slice(start, index));
+  };
+  const value = (path = []) => {
+    skipSpace();
+    if (source[index] === '{') {
+      index++;
+      skipSpace();
+      const seen = new Set();
+      if (source[index] === '}') { index++; return; }
+      while (index < source.length) {
+        skipSpace();
+        const key = string();
+        const child = [...path, key];
+        if (seen.has(key)) duplicates.push(child);
+        seen.add(key);
+        skipSpace();
+        index++;
+        value(child);
+        skipSpace();
+        if (source[index] === '}') { index++; return; }
+        index++;
+      }
+      return;
+    }
+    if (source[index] === '[') {
+      index++;
+      skipSpace();
+      if (source[index] === ']') { index++; return; }
+      let item = 0;
+      while (index < source.length) {
+        value([...path, String(item++)]);
+        skipSpace();
+        if (source[index] === ']') { index++; return; }
+        index++;
+      }
+      return;
+    }
+    if (source[index] === '"') { string(); return; }
+    while (index < source.length && !/[\s,}\]]/u.test(source[index])) index++;
+  };
+  value();
+  return duplicates;
+}
+
+function readJson(req, limit, { rejectDuplicateMappingKeys = false } = {}) {
   return new Promise((resolve, reject) => {
     let size = 0;
     let settled = false;
@@ -134,6 +189,13 @@ function readJson(req, limit) {
       if (typeof data !== 'object' || data === null || Array.isArray(data)) {
         return done(reject, badRequest('The request body must be a JSON object'));
       }
+      if (rejectDuplicateMappingKeys) {
+        const duplicate = duplicateJsonKeys(text).find((parts) => parts[0] === 'mapping');
+        if (duplicate) {
+          const path = duplicate.length > 1 ? `mapping.${String(duplicate[1]).slice(0, 64)}` : 'mapping';
+          return done(reject, new OpsError('invalid_input', 'Mapping keys must be unique', path));
+        }
+      }
       done(resolve, data);
     });
     req.on('error', (err) => done(reject, err));
@@ -153,7 +215,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, dataDir = config.dataDir, log = () => {} }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -208,7 +270,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   };
 
   const trackerApiRoutes = config.authEnabled && config.tracker
-    ? createTrackerRoutes({ directory, compile, audit, cloud, now })
+    ? createTrackerRoutes({ directory, compile, audit, cloud, now, roomAccess, baseUrl: config.baseUrl })
+    : [];
+  const trackerLinkRoutes = config.authEnabled && config.tracker
+    ? createTrackerLinkRoutes({ directory, compile, audit, cloud, now, roomAccess, baseUrl: config.baseUrl })
     : [];
   const trackerMutationWindows = new Map();
   function requireTrackerMutationCapacity(user, res) {
@@ -462,6 +527,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   const routes = [
     ...trackerApiRoutes,
+    ...trackerLinkRoutes,
 
     ...(backupExport
       ? [
@@ -1363,7 +1429,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       return;
     }
     const guest = auth.authenticateGuest?.(req.headers.cookie) ?? null;
-    if (guest && segments[0] === 'tracker') throw notFound('No such endpoint');
+    if (guest && segments[0] === 'tracker') {
+      if (segments[1] === 'links') throw forbidden('Guest sessions cannot use tracker links.');
+      throw notFound('No such endpoint');
+    }
     if (guest && !guestApiAllows(method, segments, guest)) throw forbidden('This guest session is limited to one board');
     const { route, params } = resolve(method, segments);
 
@@ -1397,7 +1466,9 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       throw new HttpError(402, 'read_only', 'This workspace is read-only. Ask the workspace owner to check billing.');
     }
     if (route.trackerMutation) requireTrackerMutationCapacity(session.user, res);
-    const body = route.body && BODY_METHODS.has(method) ? await readJson(req, route.maxBody ?? MAX_BODY) : {};
+    const body = route.body && BODY_METHODS.has(method)
+      ? await readJson(req, route.maxBody ?? MAX_BODY, { rejectDuplicateMappingKeys: route.trackerLink === true })
+      : {};
     // A body can take a while to arrive: judge the request by who the caller is now, not when it started.
     if (session && route.body) {
       session = signedIn();

@@ -176,10 +176,20 @@ describe('tracker link HTTP API', () => {
 describe('linked card projection and entry gating', () => {
   it('accepts sanitized tracker projection from the document and blocks ordinary client writes', () => {
     const store = new Store(new Y.Doc());
-    const card = { id: 'card-1', type: 'card', x: 0, y: 0, w: 220, h: 72, rotation: 0, z: 'a0', text: 'plain' } as BaseObj;
-    const container = { id: 'kanban-1', type: 'container', layout: 'kanban', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a1' } as BaseObj;
+    const card = {
+      id: 'card-1', type: 'card', x: 0, y: 0, w: 220, h: 72, rotation: 0, z: 'a0', text: 'plain',
+      extProvider: 'tabula', extKey: 'TAB-23', extUrl: 'https://tracker.example/t/TAB-23', trackerId: 'tracker-1',
+      tracker: { ticketId: 'ticket-23', ticketKey: 'TAB-23', title: 'forged', state: { id: 'state-todo', key: 'todo', name: 'To do', category: 'unstarted' }, assignee: null, labels: [], priority: 'none', due: null, projectionSeq: 1 },
+      trackerUnmappedState: true,
+    } as BaseObj;
+    const container = {
+      id: 'kanban-1', type: 'container', layout: 'kanban', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a1',
+      ext: { provider: 'tabula', tracker: 'tracker-1', map: { 'lane-1': 'todo' } },
+    } as BaseObj;
     store.transact(() => { store.create(card); store.create(container); });
     expect(store.get(card.id)).not.toHaveProperty('extKey');
+    expect(store.get(card.id)).not.toHaveProperty('tracker');
+    expect(store.get(card.id)).not.toHaveProperty('trackerUnmappedState');
     expect(store.get(container.id)).not.toHaveProperty('ext');
     const cardMap = store.objects.get(card.id)!;
     const containerMap = store.objects.get(container.id)!;
@@ -188,19 +198,23 @@ describe('linked card projection and entry gating', () => {
       cardMap.set('extKey', 'TAB-23');
       cardMap.set('extUrl', 'https://tracker.example/t/TAB-23');
       cardMap.set('trackerId', 'tracker-1');
-      cardMap.set('tracker', { ticketId: 'ticket-23', title: 'Server title', state: { key: 'todo', name: 'To do', category: 'unstarted' } });
+      cardMap.set('tracker', { ticketId: 'ticket-23', ticketKey: 'TAB-23', title: 'Server title', state: { id: 'state-todo', key: 'todo', name: 'To do', category: 'unstarted' }, assignee: null, labels: [], priority: 'none', due: null, projectionSeq: 1 });
+      cardMap.set('trackerUnmappedState', false);
       containerMap.set('ext', { provider: 'tabula', tracker: 'tracker-1', map: { 'lane-1': 'todo', 'bad lane': 'unsafe' } });
     }, 'server');
     const projectedCard = safeObj(store.get(card.id)! as BaseObj) as BaseObj & { tracker?: { title?: string; state?: { key?: string; name?: string } } };
     const projectedContainer = safeObj(store.get(container.id)! as BaseObj);
     expect(projectedCard).toMatchObject({ extProvider: 'tabula', extKey: 'TAB-23', extUrl: 'https://tracker.example/t/TAB-23', trackerId: 'tracker-1' });
-    expect(projectedCard.tracker).toMatchObject({ title: 'Server title', state: { key: 'todo', name: 'To do' } });
+    expect(projectedCard.tracker).toMatchObject({ title: 'Server title', ticketKey: 'TAB-23', state: { key: 'todo', name: 'To do' } });
     expect(projectedContainer.ext).toEqual({ provider: 'tabula', tracker: 'tracker-1', map: { 'lane-1': 'todo' } });
     store.transact(() => {
-      store.update(card.id, { extKey: 'TAB-999', extUrl: 'https://attacker.example', trackerId: 'attacker', tracker: { ticketId: 'forged' } });
+      store.update(card.id, { extKey: 'TAB-999', extUrl: 'https://attacker.example', trackerId: 'attacker', tracker: { ticketId: 'forged' }, trackerUnmappedState: true });
       store.update(container.id, { ext: { provider: 'tabula', tracker: 'attacker', map: {} } });
     });
-    expect(store.get(card.id)).toMatchObject({ extKey: 'TAB-23', trackerId: 'tracker-1' });
+    expect(store.get(card.id)).toMatchObject({
+      extProvider: 'tabula', extKey: 'TAB-23', extUrl: 'https://tracker.example/t/TAB-23', trackerId: 'tracker-1',
+      tracker: { title: 'Server title' }, trackerUnmappedState: false,
+    });
     expect((store.get(container.id) as BaseObj).ext).toEqual({ provider: 'tabula', tracker: 'tracker-1', map: { 'lane-1': 'todo', 'bad lane': 'unsafe' } });
   });
 
@@ -213,7 +227,7 @@ describe('linked card projection and entry gating', () => {
     const card = {
       id: 'card-1', type: 'card', x: 0, y: 0, w: 250, h: 100, rotation: 0, z: 'a2', parent: 'lane-1', rank: 'a0@lane-1',
       text: 'stale title', extProvider: 'tabula', extKey: 'TAB-23', trackerId: 'tracker-1',
-      tracker: { ticketId: 'ticket-23', title: 'Fix <script> & login', state: { id: 'state-review', key: 'in_review', name: 'Review <img>&', category: 'started' } },
+      tracker: { ticketId: 'ticket-23', ticketKey: 'TAB-23', title: 'Fix <script> & login', state: { id: 'state-review', key: 'in_review', name: 'Review <img>&', category: 'started' }, assignee: null, labels: [], priority: 'none', due: null, projectionSeq: 1 },
     } as BaseObj;
     const objects = new Map([[container.id, container], [lane.id, lane]]);
     const markup = objectMarkup(card, { get: (id) => objects.get(id) });

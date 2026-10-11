@@ -481,7 +481,9 @@ export function wipCheck(lane, cards, moving) {
  * Card fields a template never carries: it names no people or agents, no due dates or card links, and tracker links are
  * reserved. Saving a template strips them; a template that has them anyway is refused.
  */
-export const TEMPLATE_STRIPPED = Object.freeze(['ownerId', 'ownerName', 'ownerKind', 'due', 'link', 'extProvider', 'extKey', 'extUrl']);
+export const TEMPLATE_STRIPPED = Object.freeze([
+  'ownerId', 'ownerName', 'ownerKind', 'due', 'link', 'extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState',
+]);
 
 const TEMPLATE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 // on one line: no control character and no line or paragraph separator

@@ -8,7 +8,8 @@ import { KANBAN, LIMITS as KANBAN_LIMITS, rankBetween, sortedChildren } from '..
 import {
   LIMITS, OpsError, SHAPE_KINDS, STICKY_COLORS, addReply, addThread, aiAuthor, applyPlan, cleanForModel, fence, getObjectsDetail,
   hiddenIds, listThreads, planAddKanbanLane, planCreate, planCreateKanbanLabel, planDelete, planDeleteKanbanLabel,
-  planCreateKanban, planDeleteKanbanLane, planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, resolveAnchor, stripInvisible, summariseBoard,
+  planCreateKanban, planDeleteKanbanLane, planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, planRemoveTrackerProjection,
+  planTrackerProjection, planUseTemplate, resolveAnchor, stripInvisible, summariseBoard,
 } from '../server/board-ops.mjs';
 
 const who = { createdBy: 'user-1', now: 1000 };
@@ -1378,6 +1379,142 @@ describe('tracker frame summaries', () => {
     for (const item of [summary, detail]) {
       expect(item).toMatchObject({ type: 'tracker', trackerId: 'workspace_1', view: 'projects', focusKey: 'TAB-42' });
       expect(item).not.toHaveProperty('viewId');
+    }
+  });
+});
+
+describe('server-side linked kanban projection plans', () => {
+  const projection = {
+    ticketId: 'ticket-1',
+    ticketKey: 'TAB-1',
+    title: 'Canonical ticket title',
+    state: { id: 'state-done', key: 'done', name: 'Done', category: 'completed' },
+    assignee: null,
+    labels: [],
+    priority: 'none',
+    due: null,
+    projectionSeq: 12,
+  };
+
+  function linkedBoard() {
+    const d = new Y.Doc();
+    seed(
+      d,
+      boardObject('kanban-1', 'container', { layout: 'kanban' }),
+      boardObject('lane-todo', 'lane', { parent: 'kanban-1', rank: 'a0@kanban-1', name: 'To do' }),
+      boardObject('lane-done', 'lane', { parent: 'kanban-1', rank: 'a1@kanban-1', name: 'Done' }),
+      boardObject('card-1', 'card', { parent: 'lane-todo', rank: 'a0@lane-todo', text: 'Old card title' }),
+    );
+    return d;
+  }
+
+  it('projects SQL fields and moves a card to the mapped lane, then unlink restores a plain card', () => {
+    const d = linkedBoard();
+    const plan = planTrackerProjection(d, {
+      containerId: 'kanban-1',
+      cardId: 'card-1',
+      trackerId: 'tracker-1',
+      map: { 'lane-todo': 'todo', 'lane-done': 'done' },
+      targetLaneId: 'lane-done',
+      extUrl: 'https://tabula.example/t/TAB-1',
+      projection,
+      now: 50,
+    });
+    d.transact(() => applyPlan(d, plan), 'tracker:test');
+    expect(new Store(d).get('card-1')).toMatchObject({
+      parent: 'lane-done', text: 'Old card title', extProvider: 'tabula', extKey: 'TAB-1',
+      trackerId: 'tracker-1', tracker: projection, trackerUnmappedState: false,
+    });
+    expect(new Store(d).get('kanban-1')).toMatchObject({
+      ext: { provider: 'tabula', tracker: 'tracker-1', map: { 'lane-todo': 'todo', 'lane-done': 'done' } },
+    });
+
+    const remove = planRemoveTrackerProjection(d, { containerId: 'kanban-1', cardIds: ['card-1'], now: 60 });
+    d.transact(() => applyPlan(d, remove), 'tracker:unlink');
+    expect(new Store(d).get('card-1')).toMatchObject({ parent: 'lane-done', text: 'Old card title' });
+    for (const field of ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'trackerUnmappedState']) {
+      expect(new Store(d).get('card-1')).not.toHaveProperty(field);
+    }
+    expect(new Store(d).get('kanban-1')).not.toHaveProperty('ext');
+  });
+
+  it('leaves an unmapped state in place with a server marker', () => {
+    const d = linkedBoard();
+    const unmapped = { ...projection, state: { id: 'state-review', key: 'in_review', name: 'In review', category: 'started' } };
+    const plan = planTrackerProjection(d, {
+      containerId: 'kanban-1', cardId: 'card-1', trackerId: 'tracker-1',
+      map: { 'lane-todo': 'todo', 'lane-done': 'done' }, targetLaneId: null,
+      extUrl: 'https://tabula.example/t/TAB-1', projection: unmapped, now: 50,
+    });
+    d.transact(() => applyPlan(d, plan), 'tracker:test');
+    expect(new Store(d).get('card-1')).toMatchObject({ parent: 'lane-todo', trackerUnmappedState: true });
+  });
+
+  it('rejects tracker projection fields through client and MCP object writers', () => {
+    const d = new Y.Doc();
+    const client = new Store(d);
+    client.create({
+      ...box('client-card'),
+      type: 'card',
+      extProvider: 'tabula',
+      extKey: 'TAB-1',
+      extUrl: 'https://tabula.example/t/TAB-1',
+      trackerId: 'tracker-1',
+      tracker: projection,
+      trackerUnmappedState: true,
+    } as any);
+    for (const field of ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'trackerUnmappedState']) {
+      expect(client.get('client-card')).not.toHaveProperty(field);
+    }
+    const serverFields = {
+      extProvider: 'tabula', extKey: 'TAB-1', extUrl: 'https://tabula.example/t/TAB-1', trackerId: 'tracker-1',
+      tracker: projection, ext: { provider: 'tabula' }, trackerUnmappedState: true,
+    };
+    for (const field of Object.keys(serverFields)) {
+      expect(failure(() => planCreate(new Y.Doc(), [{ type: 'shape', x: 0, y: 0, [field]: serverFields[field as keyof typeof serverFields] }], who)))
+        .toMatchObject({ code: 'invalid_input', path: `objects[0].${field}` });
+    }
+    const shape = create(d, [{ type: 'shape', x: 0, y: 0 }]).created[0];
+    for (const field of Object.keys(serverFields)) {
+      expect(failure(() => planUpdate(d, [{ id: shape.id, [field]: serverFields[field as keyof typeof serverFields] }])))
+        .toMatchObject({ code: 'invalid_input', path: `updates[0].${field}` });
+    }
+  });
+
+  it('strips the server projection fields when applying a board template', () => {
+    const d = new Y.Doc();
+    const plan = planUseTemplate(d, { objects: [{
+      id: 'template-card', type: 'card', x: 0, y: 0, w: 220, h: 72, rotation: 0, z: 'a0', text: 'Template card',
+      extProvider: 'tabula', extKey: 'TAB-1', extUrl: 'https://tabula.example/t/TAB-1', trackerId: 'tracker-1',
+      tracker: projection, ext: { provider: 'tabula', tracker: 'tracker-1', map: {} }, trackerUnmappedState: true,
+    }] }, { createdBy: 'user-1', now: 5, at: { x: 0, y: 0 } } as any);
+    d.transact(() => applyPlan(d, plan), 'template:test');
+    const created = plan.ops[0].id;
+    const fields = (d.getMap('objects') as Y.Map<Y.Map<unknown>>).get(created)?.toJSON();
+    expect(fields).toMatchObject({ type: 'card', text: 'Template card' });
+    for (const field of ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']) {
+      expect(fields).not.toHaveProperty(field);
+    }
+  });
+});
+
+describe('server-owned tracker fields over MCP', () => {
+  const fields = ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState'];
+
+  it('refuses them on create_objects', () => {
+    for (const field of fields) {
+      const d = new Y.Doc();
+      const err = failure(() => planCreate(d, [{ type: 'sticky', x: 0, y: 0, text: 'x', [field]: 'forged' }], who));
+      expect(err.path).toBe(`objects[0].${field}`);
+    }
+  });
+
+  it('refuses them on update_objects', () => {
+    for (const field of fields) {
+      const d = new Y.Doc();
+      seed(d, box('b1'));
+      const err = failure(() => planUpdate(d, [{ id: 'b1', [field]: 'forged' }], { now: 2000 }));
+      expect(err.path).toBe(`updates[0].${field}`);
     }
   });
 });

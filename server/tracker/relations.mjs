@@ -1,6 +1,7 @@
 import { requireTicketRead, requireTicketWrite } from './access.mjs';
 import { appendTicketEvent } from './events.mjs';
 import { getTicket } from './tickets.mjs';
+import { enqueueTicketProjection } from './projection.mjs';
 import {
   actorInfo, conflict, getDb, inTransaction, invalid, limitExceeded, newId, notFound, requireWritable,
 } from './shared.mjs';
@@ -70,6 +71,7 @@ function markRelationsChanged(db, ticket, actor, source, eventType, relatedKey, 
     details: { relatedTicketKey: relatedKey, relationKind },
   });
   db.prepare('UPDATE tickets SET updated_at = ?, updated_seq = ? WHERE id = ?').run(now, seq, ticket.id);
+  enqueueTicketProjection({ db, ticketId: ticket.id, eventSeq: seq, now });
   db.prepare(
     `INSERT INTO ticket_field_versions (ticket_id, field, event_seq, actor_type, actor_id)
      VALUES (?, 'relations', ?, ?, ?)
@@ -95,13 +97,13 @@ export function relateTickets({ directory, db: dbArg, actor, key, relation, othe
     const normalized = canonicalRelation(ticket, other, relation);
     const existing = relationExists(db, normalized);
     if (remove) {
-      if (!existing) return { ticket: getTicket({ db, actor, key: ticket.key }) };
+      if (!existing) return { ticket: getTicket({ directory, db, actor, key: ticket.key }) };
       db.prepare('DELETE FROM ticket_relations WHERE id = ?').run(existing.id);
       markRelationsChanged(db, ticket, actor, source, 'unrelated', other.key, relation, now);
       markRelationsChanged(db, other, actor, source, 'unrelated', ticket.key, INVERSE[relation], now);
-      return { ticket: getTicket({ db, actor, key: ticket.key }) };
+      return { ticket: getTicket({ directory, db, actor, key: ticket.key }) };
     }
-    if (existing) return { ticket: getTicket({ db, actor, key: ticket.key }) };
+    if (existing) return { ticket: getTicket({ directory, db, actor, key: ticket.key }) };
     if (relationForPair(db, ticket.id, other.id)) throw conflict('These tickets already have a relation', 'relation');
     if (normalized.kind === 'blocks' && wouldCreateBlockCycle(db, normalized.from, normalized.to)) {
       throw conflict('This blocks relation would create a cycle', 'relation');
@@ -117,7 +119,7 @@ export function relateTickets({ directory, db: dbArg, actor, key, relation, othe
     ).run(newId(), normalized.from.id, normalized.to.id, normalized.kind, now, info.type, info.id);
     markRelationsChanged(db, ticket, actor, source, 'related', other.key, relation, now);
     markRelationsChanged(db, other, actor, source, 'related', ticket.key, INVERSE[relation], now);
-    return { ticket: getTicket({ db, actor, key: ticket.key }) };
+    return { ticket: getTicket({ directory, db, actor, key: ticket.key }) };
   });
 }
 
