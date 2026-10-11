@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, test, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHarness, type Account, type Body, type Res } from './mcp-harness';
