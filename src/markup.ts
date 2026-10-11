@@ -16,7 +16,7 @@ import type { Label } from './types';
 import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
 import { renderTrackerFrame } from './tracker-frame';
-import { linkedCardHeaderMarkup, unmappedStateChipMarkup } from './tracker/ui/linked-card-style';
+import { linkedCardHeaderMarkup } from './tracker/ui/linked-card-style';
 import type { TrackerPriority, TrackerStateCategory } from './tracker-types';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, laneMenuRect, localToday, lowDetail, wipFullMessage, type FilterChip } from './ui/kanban-logic';
 
@@ -578,6 +578,7 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
       laneStateKey,
       width: w,
       height: h,
+      unmapped: unmappedChip,
       zoom: ctx.zoom ?? 1,
       priority: (projection as { priority?: TrackerPriority } | undefined)?.priority,
     });
@@ -592,7 +593,6 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
     }
   }
   y += Math.min(Math.max(lines.length, 1), CARD.titleLines) * CARD.titleLine;
-  if (unmappedChip && h - y >= 30) inner += `<g transform="translate(12 ${n(h - 30)})">${unmappedStateChipMarkup({ width: 100 })}</g>`;
   // labels: at most three chips, then +n; names are never clipped
   if (o.labels?.length) {
     y += CARD.rowGap;
