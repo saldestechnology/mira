@@ -108,7 +108,7 @@ export interface MeRefreshDeps {
   /** Background tabs wait until they are seen again, so an idle workspace can sleep. */
   visible: () => boolean;
   fetchMe: () => Promise<Me>;
-  apply: (me: Me) => void;
+  apply: (me: Me) => void | Promise<void>;
   /** The server no longer knows this session. */
   expired: () => void;
   setInterval: (fn: () => void, ms: number) => unknown;
@@ -143,7 +143,7 @@ export function createMeRefresher(deps: MeRefreshDeps, ms = ME_REFRESH_MS) {
     try {
       const me = await deps.fetchMe();
       // The person may have signed out while the request was in flight.
-      if (deps.active()) deps.apply(me);
+      if (deps.active()) await deps.apply(me);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) deps.expired();
     } finally {
