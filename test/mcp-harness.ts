@@ -129,18 +129,35 @@ export function createHarness(options: HarnessOptions = {}) {
 
   async function api(cookie: string | undefined, method: string, urlPath: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> {
     if (died) throw new Error(died);
-    const res = await fetch(base + urlPath, {
-      method,
-      headers: {
-        'x-mira': '1',
-        'x-tabula': '1',
-        ...(cookie ? { cookie } : {}),
-        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-        ...headers,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await res.text();
+    let res: Response;
+    let text: string;
+    let stage = 'fetch';
+    try {
+      res = await fetch(base + urlPath, {
+        method,
+        headers: {
+          'x-mira': '1',
+          'x-tabula': '1',
+          ...(cookie ? { cookie } : {}),
+          ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+          ...headers,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      stage = 'response body read';
+      text = await res.text();
+    } catch (cause) {
+      const causeMessage = cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
+      const nestedCause = cause instanceof Error && cause.cause instanceof Error
+        ? `; cause=${cause.cause.name}: ${cause.cause.message}`
+        : '';
+      const relayState = proc
+        ? `pid=${proc.pid ?? 'unknown'} exitCode=${String(proc.exitCode)} signalCode=${String(proc.signalCode)} at failure snapshot`
+        : 'no relay process';
+      const exitDetails = died ?? 'no relay exit event observed at failure snapshot';
+      const outputTail = output ? output.slice(-1500) : '(empty)';
+      throw new Error(`API ${method} ${urlPath} failed during ${stage} (${causeMessage}${nestedCause}); relay ${relayState}; ${exitDetails}; recent relay output:\n${outputTail}`, { cause });
+    }
     let parsed: Body;
     try {
       parsed = text ? JSON.parse(text) : undefined;
