@@ -1,1 +1,3 @@
-The kanban card of a linked ticket now draws the new header: ticket key, state glyph and name, priority, and a dashed "Unmapped state" chip when the lane does not match.
+section: Changed
+
+- linked kanban cards draw the new tracker header: ticket key, state glyph and name, priority, and an unmapped-state chip.
