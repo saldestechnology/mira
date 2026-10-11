@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { openDirectory } from '../server/directory.mjs';
 import { OpsError } from '../server/board-ops.mjs';
 import { refreshTicketSearch, buildFtsQuery, SEARCH_LIMITS } from '../server/tracker/search.mjs';
+import { createMilestone, createProject } from '../server/tracker/projects.mjs';
+import { relateTickets } from '../server/tracker/relations.mjs';
 import { commentTicket, createLabel, createTicket, listTickets, searchTickets, transitionTicket, updateTicket } from '../server/tracker/tickets.mjs';
 
 const opened: any[] = [];
@@ -61,6 +63,20 @@ describe('tracker search filters and ranking', () => {
     'project:Roadmap',
     'milestone:V1',
     'no-colon',
+    'priority:critical',
+    'category:done',
+    'state:todo,',
+    'state:todo,,done',
+    `state:${Array.from({ length: 21 }, (_, index) => `s${index}`).join(',')}`,
+    'updated:after-2026-02-30',
+    'updated:before-2026-13-01',
+    'created:before-not-a-date',
+    'due:this-month',
+    'has:comment',
+    'project:Missing',
+    'milestone:Missing',
+    'blocks:TAB-99999',
+    'parent:TAB-99999',
   ])('returns invalid_filter with the failing token %s', (token) => {
     const { directory, actor } = fixture();
     let error: any;
@@ -68,6 +84,196 @@ describe('tracker search filters and ranking', () => {
     expect(error).toBeInstanceOf(OpsError);
     expect(error.code).toBe('invalid_filter');
     expect(error.path).toBe(token);
+  });
+
+  it('supports the expanded filter grammar with negation, lists, none values and UTC dates', () => {
+    const { directory, owner, ada, actor } = fixture();
+    const ownerActor = actor;
+    const adaActor = { id: ada.id, role: ada.role, name: ada.name };
+    const red = createProject({ directory, actor, name: 'Red' });
+    const blue = createProject({ directory, actor, name: 'Blue' });
+    createMilestone({ directory, actor, projectId: red.id, name: 'Launch', due: '2026-10-30' });
+    createMilestone({ directory, actor, projectId: blue.id, name: 'Rollout', due: '2026-11-15' });
+    createLabel({ directory, actor, name: 'Bug' });
+    createLabel({ directory, actor, name: 'UX' });
+    directory.db.prepare(
+      `INSERT INTO ticket_states (id, workflow_id, state_key, name, category, position, is_default, created_at)
+       VALUES ('st_backlog_filter_test', 'wf_default', 'backlog', 'Backlog', 'backlog', 5, 0, ?)`,
+    ).run(NOW);
+    const alpha = createTicket({
+      directory, actor: ownerActor, title: 'Needle alpha', state: 'in_progress', priority: 'high', assignee: 'Ada',
+      labels: ['bug'], due: '2026-10-05', project: 'Red', milestone: 'Launch', now: Date.UTC(2026, 9, 5, 12),
+    });
+    const beta = createTicket({
+      directory, actor: adaActor, title: 'Needle beta', priority: 'low', labels: ['UX'], project: 'Blue', milestone: 'Rollout',
+      now: Date.UTC(2026, 9, 10, 0),
+    });
+    const gamma = createTicket({
+      directory, actor: ownerActor, title: 'Needle gamma', state: 'done', priority: 'none', assignee: 'me', labels: ['bug'],
+      due: '2026-10-12', project: 'Red', now: Date.UTC(2026, 9, 9, 23),
+    });
+    const delta = createTicket({
+      directory, actor: ownerActor, title: 'Needle delta', state: 'cancelled', priority: 'urgent', due: '2026-09-20',
+      now: Date.UTC(2026, 9, 10, 0),
+    });
+    const epsilon = createTicket({
+      directory, actor: ownerActor, title: 'Needle epsilon', state: 'backlog', priority: 'medium', assignee: 'Ada',
+      due: '2026-10-11', project: 'Blue', milestone: 'Rollout', now: Date.UTC(2026, 9, 8, 12),
+    });
+    directory.db.prepare('UPDATE tickets SET created_at = CASE key WHEN ? THEN ? WHEN ? THEN ? WHEN ? THEN ? WHEN ? THEN ? WHEN ? THEN ? END, updated_at = CASE key WHEN ? THEN ? WHEN ? THEN ? WHEN ? THEN ? WHEN ? THEN ? WHEN ? THEN ? END')
+      .run(
+        alpha.key, Date.UTC(2026, 9, 5, 12), beta.key, Date.UTC(2026, 9, 10, 0), gamma.key, Date.UTC(2026, 9, 9, 23),
+        delta.key, Date.UTC(2026, 9, 10, 0), epsilon.key, Date.UTC(2026, 9, 8, 12),
+        alpha.key, NOW, beta.key, NOW, gamma.key, Date.UTC(2026, 9, 9, 23), delta.key, NOW, epsilon.key, Date.UTC(2026, 9, 8, 12),
+      );
+
+    const cases: Array<[string, string[]]> = [
+      ['state:todo,in_progress', [alpha.key, beta.key]],
+      ['-state:done,cancelled', [alpha.key, beta.key, epsilon.key]],
+      ['label:bug,ux', [alpha.key, beta.key, gamma.key]],
+      ['-label:bug,ux', [delta.key, epsilon.key]],
+      ['assignee:me,Ada', [alpha.key, gamma.key, epsilon.key]],
+      ['assignee:none', [beta.key, delta.key]],
+      ['-assignee:none', [alpha.key, gamma.key, epsilon.key]],
+      ['-assignee:me,Ada', [beta.key, delta.key]],
+      ['creator:me', [alpha.key, gamma.key, delta.key, epsilon.key]],
+      ['creator:Ada', [beta.key]],
+      ['-creator:me,Ada', []],
+      ['priority:high,low', [alpha.key, beta.key]],
+      ['-priority:low,none', [alpha.key, delta.key, epsilon.key]],
+      ['category:started,unstarted', [alpha.key, beta.key]],
+      ['-category:completed,canceled', [alpha.key, beta.key, epsilon.key]],
+      ['project:RED,blue', [alpha.key, beta.key, gamma.key, epsilon.key]],
+      ['project:none', [delta.key]],
+      ['-project:Red,Blue', [delta.key]],
+      ['milestone:launch,ROLLOUT', [alpha.key, beta.key, epsilon.key]],
+      ['milestone:none', [gamma.key, delta.key]],
+      ['-milestone:Launch,Rollout', [gamma.key, delta.key]],
+      ['due:this-week', [alpha.key, epsilon.key]],
+      ['-due:this-week', [beta.key, gamma.key, delta.key]],
+      ['due:none', [beta.key]],
+      ['-due:none', [alpha.key, gamma.key, delta.key, epsilon.key]],
+      ['due:after-2026-10-10', [gamma.key, epsilon.key]],
+      ['due:before-2026-10-10', [alpha.key, delta.key]],
+      ['due:overdue', [alpha.key]],
+      ['has:link', []],
+      ['-has:link', [alpha.key, beta.key, gamma.key, delta.key, epsilon.key]],
+      ['-is:archived', [alpha.key, beta.key, gamma.key, delta.key, epsilon.key]],
+      ['updated:after-2026-10-10', [alpha.key, beta.key, delta.key]],
+      ['updated:before-2026-10-10', [gamma.key, epsilon.key]],
+      ['created:after-2026-10-10', [beta.key, delta.key]],
+      ['created:before-2026-10-10', [alpha.key, gamma.key, epsilon.key]],
+    ];
+    for (const [filter, expected] of cases) {
+      expect(
+        listTickets({ directory, actor, filters: [filter], now: NOW }).entries.map((ticket: any) => ticket.key).sort(),
+        `filter ${filter}`,
+      ).toEqual([...expected].sort());
+    }
+    const dueToday = createTicket({ directory, actor, title: 'Boundary due date', due: '2026-10-10', now: NOW });
+    expect(listTickets({ directory, actor, filters: ['due:after-2026-10-10'], now: NOW }).entries.map((ticket: any) => ticket.key))
+      .toContain(dueToday.key);
+    expect(listTickets({ directory, actor, filters: ['due:before-2026-10-10'], now: NOW }).entries.map((ticket: any) => ticket.key))
+      .not.toContain(dueToday.key);
+    expect(searchTickets({ directory, actor, query: 'needle', filters: ['priority:high'] }).entries.map((ticket: any) => ticket.key))
+      .toEqual([alpha.key]);
+    expect(owner.id).not.toBe(ada.id);
+  });
+
+  it('matches creators directly and by agent, integration, import and system type', () => {
+    const { directory, owner, ada, actor } = fixture();
+    const adaActor = { id: ada.id, role: ada.role, name: ada.name };
+    const direct = createTicket({ directory, actor, title: 'Direct owner creator' });
+    const adaDirect = createTicket({ directory, actor: adaActor, title: 'Direct Ada creator' });
+    const agentActor = { type: 'mcp_token', id: 'agent-token', user: { id: owner.id, role: 'owner', name: owner.name }, tracker: 'write' };
+    const agent = createTicket({ directory, actor: agentActor, title: 'Agent creator' });
+    const systemActor = { type: 'system', id: 'system-importer', ticketAccess: 'write' };
+    const importedBySource = createTicket({ directory, actor: systemActor, title: 'Linear import', source: 'linear-import' });
+    const importedByType = createTicket({ directory, actor: systemActor, title: 'Other import' });
+    const integration = createTicket({ directory, actor: systemActor, title: 'Integration creator' });
+    const system = createTicket({ directory, actor: systemActor, title: 'System creator' });
+    directory.db.prepare("UPDATE tickets SET created_by_type = 'import' WHERE id = ?").run(importedByType.id);
+    directory.db.prepare("UPDATE tickets SET created_by_type = 'integration' WHERE id = ?").run(integration.id);
+    const matches = (filter: string) => listTickets({ directory, actor, filters: [filter] }).entries.map((ticket: any) => ticket.key).sort();
+
+    expect(matches('creator:me')).toEqual([direct.key]);
+    expect(matches('creator:Owner')).toEqual([direct.key]);
+    expect(matches('creator:ada@example.com')).toEqual([adaDirect.key]);
+    expect(matches('creator:agent')).toEqual([agent.key]);
+    expect(matches('creator:integration')).toEqual([integration.key]);
+    expect(matches('creator:import')).toEqual([importedBySource.key, importedByType.key].sort());
+    expect(matches('creator:system')).toEqual([importedBySource.key, system.key].sort());
+    expect(matches('-creator:me')).toContain(agent.key);
+    expect(matches('-creator:me')).not.toContain(direct.key);
+  });
+
+  it('filters direct parents and real relation directions with open-state blocking semantics', () => {
+    const { directory, actor } = fixture();
+    const parent = createTicket({ directory, actor, title: 'Parent' });
+    const child = createTicket({ directory, actor, title: 'Child', parent: parent.key });
+    const openBlocker = createTicket({ directory, actor, title: 'Open blocker', state: 'in_progress' });
+    const doneBlocker = createTicket({ directory, actor, title: 'Done blocker', state: 'done' });
+    const canceledBlocker = createTicket({ directory, actor, title: 'Canceled blocker', state: 'cancelled' });
+    const openTarget = createTicket({ directory, actor, title: 'Open target' });
+    const doneOnlyTarget = createTicket({ directory, actor, title: 'Done only target' });
+    const canceledOnlyTarget = createTicket({ directory, actor, title: 'Canceled only target' });
+    const closedTarget = createTicket({ directory, actor, title: 'Closed target', state: 'done' });
+    const relatePeer = createTicket({ directory, actor, title: 'Relate peer' });
+    const duplicate = createTicket({ directory, actor, title: 'Duplicate' });
+    const original = createTicket({ directory, actor, title: 'Original' });
+    relateTickets({ directory, actor, key: openBlocker.key, relation: 'blocks', otherKey: openTarget.key });
+    relateTickets({ directory, actor, key: doneBlocker.key, relation: 'blocks', otherKey: doneOnlyTarget.key });
+    relateTickets({ directory, actor, key: canceledBlocker.key, relation: 'blocks', otherKey: canceledOnlyTarget.key });
+    relateTickets({ directory, actor, key: openBlocker.key, relation: 'blocks', otherKey: closedTarget.key });
+    relateTickets({ directory, actor, key: openBlocker.key, relation: 'relates_to', otherKey: relatePeer.key });
+    relateTickets({ directory, actor, key: duplicate.key, relation: 'duplicates', otherKey: original.key });
+    const matches = (filter: string) => listTickets({ directory, actor, filters: [filter] }).entries.map((ticket: any) => ticket.key).sort();
+
+    expect(matches(`has:parent`)).toEqual([child.key]);
+    expect(matches('has:sub')).toEqual([parent.key]);
+    expect(matches(`parent:${parent.key.toLowerCase()}`)).toEqual([child.key]);
+    expect(matches('has:relation')).toEqual([
+      openBlocker.key, doneBlocker.key, canceledBlocker.key, openTarget.key, doneOnlyTarget.key,
+      canceledOnlyTarget.key, closedTarget.key, relatePeer.key, duplicate.key, original.key,
+    ].sort());
+    expect(matches('is:blocked')).toEqual([openTarget.key, closedTarget.key].sort());
+    expect(matches('is:blocking')).toEqual([openBlocker.key, doneBlocker.key, canceledBlocker.key].sort());
+    expect(matches(`blocks:${openTarget.key}`)).toEqual([openBlocker.key]);
+    expect(matches(`blocked-by:${openBlocker.key}`)).toEqual([openTarget.key, closedTarget.key].sort());
+    expect(matches(`relates:${relatePeer.key}`)).toEqual([openBlocker.key]);
+    expect(matches(`duplicates:${original.key}`)).toEqual([duplicate.key]);
+    expect(matches(`duplicated-by:${duplicate.key}`)).toEqual([original.key]);
+    expect(matches(`-blocks:${openTarget.key}`)).not.toContain(openBlocker.key);
+    expect(matches('-has:relation')).not.toContain(openBlocker.key);
+
+    let invisibleError: any;
+    try { listTickets({ directory, actor: {}, filters: [`blocks:${openTarget.key}`] }); } catch (error) { invisibleError = error; }
+    expect(invisibleError).toMatchObject({ code: 'invalid_filter', path: `blocks:${openTarget.key}` });
+  });
+
+  it('keeps filter values parameterized and walks equal-updated_at pages with a new filter', () => {
+    const { directory, actor } = fixture();
+    const unsafeLabel = "widget'%; DROP TABLE tickets;--";
+    createLabel({ directory, actor, name: unsafeLabel });
+    const unsafeTicket = createTicket({ directory, actor, title: 'Bound value result', labels: [unsafeLabel] });
+    expect(listTickets({ directory, actor, filters: [`label:${unsafeLabel}`] }).entries.map((ticket: any) => ticket.key))
+      .toEqual([unsafeTicket.key]);
+    expect(directory.db.prepare('SELECT COUNT(*) AS n FROM tickets').get().n).toBe(1);
+    updateTicket({ directory, actor, key: unsafeTicket.key, patch: { archived: true } });
+
+    const tickets = Array.from({ length: 5 }, (_, index) => createTicket({
+      directory, actor, title: `Tie page ${index}`, state: index % 2 ? 'in_progress' : 'todo', now: NOW,
+    }));
+    directory.db.prepare('UPDATE tickets SET updated_at = ?').run(NOW);
+    const walk: any[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = listTickets({ directory, actor, filters: ['-state:done,cancelled'], limit: 2, cursor, now: NOW });
+      walk.push(...page.entries);
+      cursor = page.next;
+    } while (cursor);
+    const expected = [...tickets].sort((a: any, b: any) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map((ticket: any) => ticket.key);
+    expect(walk.map((ticket: any) => ticket.key)).toEqual(expected);
   });
 
   it('quotes FTS terms so operators and column syntax stay ordinary search text', () => {
