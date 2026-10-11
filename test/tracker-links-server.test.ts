@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { openDirectory } from '../server/directory.mjs';
 import { createTicketForCard, linkKanban, listLinks, suggestMapping, unlinkKanban } from '../server/tracker/links.mjs';
 import {
-  createTrackerProjectionWorker, drainTicketProjection, retryTrackerProjectionOnRoomLoad,
+  createTrackerProjectionWorker, drainTicketProjection, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad,
   writeTrackerContainerLink, writeTrackerContainerUnlink,
 } from '../server/tracker/projection.mjs';
 import { transitionTicket } from '../server/tracker/tickets.mjs';
@@ -77,6 +77,128 @@ function makeLink(fx: ReturnType<typeof fixture>, options: Record<string, unknow
     idempotencyKey: 'link-server-test-123', roomAccess: fx.roomAccess, now: 100, ...options,
   });
 }
+
+describe('tracker projection guard', () => {
+  it('strips forged values from unlinked cards and containers', () => {
+    const fx = fixture();
+    const card = objs(fx.doc).get('card-2');
+    const container = objs(fx.doc).get('kanban-1');
+    card?.set('extProvider', 'tabula');
+    card?.set('extKey', 'FORGED-1');
+    card?.set('extUrl', 'https://forged.invalid/t/FORGED-1');
+    card?.set('trackerId', 'forged-tracker');
+    card?.set('tracker', { ticketKey: 'FORGED-1' });
+    card?.set('trackerUnmappedState', true);
+    card?.set('ext', { provider: 'tabula', tracker: 'forged-tracker', map: {} });
+    container?.set('ext', { provider: 'tabula', tracker: 'forged-tracker', map: { 'lane-todo': 'forged' } });
+
+    expect(reconcileTrackerProjection({ directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', now: 200 }))
+      .toMatchObject({ stripped: 2, repaired: 0, changed: 2 });
+    const after = card?.toJSON();
+    for (const field of ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'trackerUnmappedState', 'ext']) {
+      expect(after).not.toHaveProperty(field);
+    }
+    expect(container?.toJSON()).not.toHaveProperty('ext');
+  });
+
+  it('repairs linked card and container values from SQL without creating a ticket event', () => {
+    const fx = fixture(1);
+    makeLink(fx);
+    drainTicketProjection({ directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', now: 100 });
+    const eventCount = Number(fx.directory.db.prepare('SELECT COUNT(*) AS n FROM ticket_events').get()?.n);
+    const card = objs(fx.doc).get('card-1');
+    const container = objs(fx.doc).get('kanban-1');
+    card?.set('extKey', 'FORGED-1');
+    card?.set('tracker', { ticketKey: 'FORGED-1', state: { key: 'forged' } });
+    container?.set('ext', { provider: 'tabula', tracker: 'forged-tracker', map: { 'lane-todo': 'forged' } });
+
+    expect(reconcileTrackerProjection({
+      directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', baseUrl: 'https://tabula.test', now: 200,
+    })).toMatchObject({ stripped: 0, repaired: 2, changed: 2 });
+    expect(card?.toJSON()).toMatchObject({
+      extProvider: 'tabula', extKey: 'TAB-1', extUrl: 'https://tabula.test/t/TAB-1', trackerId: 'trk_default',
+      tracker: { ticketKey: 'TAB-1', state: { key: 'todo' } }, trackerUnmappedState: false,
+    });
+    expect(container?.get('ext')).toEqual({
+      provider: 'tabula', tracker: 'trk_default', map: { 'lane-done': 'done', 'lane-todo': 'todo' },
+    });
+    expect(fx.directory.db.prepare('SELECT COUNT(*) AS n FROM ticket_events').get()?.n).toBe(eventCount);
+  });
+
+  it('cleans forged values when a room is loaded for projection retry', () => {
+    const fx = fixture(1);
+    objs(fx.doc).get('card-1')?.set('extProvider', 'tabula');
+    objs(fx.doc).get('card-1')?.set('extKey', 'FORGED-1');
+    objs(fx.doc).get('kanban-1')?.set('ext', { provider: 'tabula', tracker: 'forged-tracker', map: {} });
+
+    expect(retryTrackerProjectionOnRoomLoad({
+      directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', now: 200,
+    })).toMatchObject({ projectionPending: false });
+    expect(objs(fx.doc).get('card-1')?.toJSON()).not.toHaveProperty('extKey');
+    expect(objs(fx.doc).get('kanban-1')?.toJSON()).not.toHaveProperty('ext');
+  });
+
+  it('leaves another provider’s ext values intact while removing Tabula-only fields', () => {
+    const fx = fixture(1);
+    const card = objs(fx.doc).get('card-1');
+    const container = objs(fx.doc).get('kanban-1');
+    const cardExt = { provider: 'github', issue: 'ORG-42' };
+    const containerExt = { provider: 'github', project: 'ORG' };
+    card?.set('extProvider', 'github');
+    card?.set('extKey', 'ORG-42');
+    card?.set('extUrl', 'https://github.com/ORG/42');
+    card?.set('ext', cardExt);
+    card?.set('trackerId', 'forged-tracker');
+    card?.set('tracker', { ticketKey: 'FORGED-1' });
+    card?.set('trackerUnmappedState', true);
+    container?.set('ext', containerExt);
+
+    reconcileTrackerProjection({ directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', now: 200 });
+
+    expect(container?.get('ext')).toEqual(containerExt);
+    expect(card?.toJSON()).toMatchObject({
+      extProvider: 'github', extKey: 'ORG-42', extUrl: 'https://github.com/ORG/42', ext: cardExt,
+    });
+    expect(card?.toJSON()).not.toHaveProperty('trackerId');
+    expect(card?.toJSON()).not.toHaveProperty('tracker');
+    expect(card?.toJSON()).not.toHaveProperty('trackerUnmappedState');
+  });
+
+  it('keeps a foreign container ext when restoring active links on room load', () => {
+    const fx = fixture(1);
+    makeLink(fx);
+    drainTicketProjection({ directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', now: 100 });
+    const containerExt = { provider: 'github', project: 'ORG' };
+    objs(fx.doc).get('kanban-1')?.set('ext', containerExt);
+
+    expect(retryTrackerProjectionOnRoomLoad({
+      directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', now: 200,
+    })).toMatchObject({ projectionPending: false });
+    expect(objs(fx.doc).get('kanban-1')?.get('ext')).toEqual(containerExt);
+  });
+
+  it('is idempotent and ignores its own and projection origins', () => {
+    const fx = fixture(1);
+    const card = objs(fx.doc).get('card-1');
+    card?.set('extProvider', 'tabula');
+    card?.set('extKey', 'FORGED-1');
+    reconcileTrackerProjection({ directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', now: 200 });
+
+    let updates = 0;
+    fx.doc.on('update', () => { updates++; });
+    expect(reconcileTrackerProjection({ directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', now: 300 }))
+      .toMatchObject({ changed: 0, stripped: 0, repaired: 0 });
+    expect(updates).toBe(0);
+
+    card?.set('extProvider', 'tabula');
+    card?.set('extKey', 'FORGED-2');
+    for (const origin of ['tracker-guard', 'tracker-sync:9']) {
+      expect(reconcileTrackerProjection({ directory: fx.directory, roomAccess: fx.roomAccess, boardId: 'board-1', origin }))
+        .toMatchObject({ skipped: true, changed: 0 });
+    }
+    expect(card?.get('extKey')).toBe('FORGED-2');
+  });
+});
 
 describe('tracker link commands', () => {
   it('creates tickets in the link transaction, replays idempotently, and projects later SQL state changes', () => {

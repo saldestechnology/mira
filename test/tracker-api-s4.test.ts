@@ -165,6 +165,58 @@ describe('tracker slice 4 HTTP routes', () => {
       .toMatchObject({ status: 404, body: { error: 'not_found' } });
   });
 
+  it('strips unlinked live forgeries and repairs linked live forgeries', async () => {
+    const editor = h.connect(boardId, member.cookie);
+    await editor.synced();
+
+    editor.doc.transact(() => {
+      const card = objs(editor.doc).get('card-2');
+      card?.set('extProvider', 'tabula');
+      card?.set('extKey', 'FORGED-1');
+      card?.set('trackerId', 'forged-tracker');
+      card?.set('tracker', { ticketKey: 'FORGED-1' });
+      objs(editor.doc).get('kanban-1')?.set('ext', { provider: 'tabula', tracker: 'forged-tracker', map: {} });
+    }, 'test-live-forge-unlinked');
+
+    await until(() => {
+      const card = objs(live.doc).get('card-2')?.toJSON();
+      return !card?.extProvider && !card?.extKey && !card?.trackerId && !card?.tracker
+        && !objs(live.doc).get('kanban-1')?.has('ext');
+    }, 1000);
+
+    const linked = await api(owner, 'POST', '/api/tracker/links', linkBody('guard-forgery-link-123'));
+    expect(linked.status).toBe(201);
+    const expectedKey = linked.body.created[0].ticket.key as string;
+    await until(() => objs(live.doc).get('card-1')?.get('extKey') === expectedKey);
+    const expectedCard = objs(live.doc).get('card-1')?.toJSON();
+    const expectedExt = objs(live.doc).get('kanban-1')?.get('ext');
+
+    editor.doc.transact(() => {
+      const card = objs(editor.doc).get('card-1');
+      card?.set('extKey', 'FORGED-2');
+      card?.set('tracker', { ticketKey: 'FORGED-2', state: { key: 'forged' } });
+      objs(editor.doc).get('kanban-1')?.set('ext', { provider: 'tabula', tracker: 'forged-tracker', map: {} });
+    }, 'test-live-forge-linked');
+
+    await until(() => {
+      const card = objs(live.doc).get('card-1')?.toJSON();
+      const ext = objs(live.doc).get('kanban-1')?.get('ext');
+      return card?.extKey === expectedKey && card?.tracker?.ticketKey === expectedCard?.tracker?.ticketKey
+        && card?.tracker?.state?.key === expectedCard?.tracker?.state?.key
+        && card?.trackerId === expectedCard?.trackerId && card?.extUrl === expectedCard?.extUrl
+        && ext?.provider === expectedExt?.provider && ext?.tracker === expectedExt?.tracker
+        && JSON.stringify(ext?.map) === JSON.stringify(expectedExt?.map);
+    }, 1000);
+
+    expect(objs(live.doc).get('card-1')?.toJSON()).toMatchObject({
+      extProvider: 'tabula', extKey: expectedKey, tracker: { ticketKey: expectedKey },
+    });
+    expect(objs(live.doc).get('kanban-1')?.get('ext')).toEqual(expectedExt);
+    const removed = await api(owner, 'DELETE', `/api/tracker/links/${linked.body.link.id}`);
+    expect(removed.status).toBe(200);
+    await until(() => !objs(live.doc).get('card-1')?.has('tracker') && !objs(live.doc).get('kanban-1')?.has('ext'));
+  });
+
   it('returns contract errors for missing resources, invalid or duplicate mappings, and oversize batches', async () => {
     const missingBoard = await api(owner, 'GET', '/api/tracker/links');
     expect(missingBoard).toMatchObject({ status: 400, body: { error: 'invalid_input', path: 'boardId' } });

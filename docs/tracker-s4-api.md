@@ -8,12 +8,15 @@ Status: contract for the server side of slice 4 (one-way SQL-to-card projection)
 - `mapping` is `{ [laneId]: stateKey }`. One state per lane and one lane per state. Every `laneId` must be a lane of that kanban; every `stateKey` must be an active state of the tracker's workflow. Lanes left out stay unmapped: tickets cannot be created or moved into them.
 - Access: the actor must be an owner or editor of the board and have tracker write. Viewers and guests get `403 forbidden`; a board the actor cannot see is `404 not_found`. Hosted read-only gives `403 read_only`. Reads (`GET`) need board read access and tracker read.
 - The server writes `extProvider:'tabula'`, `extKey`, `extUrl`, `trackerId` and the `tracker` projection on linked cards, and `ext:{provider, tracker, map}` on the container. Clients and MCP cannot set these fields.
+- Forged values written by a live client are stripped or repaired within a second.
 - A tracker state change moves the card to the mapped lane. If the state has no lane the card stays where it is with an "unmapped state" marker. Lane moves on the board go through the existing board path and are not propagated back in this slice (one-way projection).
 - Projection is applied after the SQL commit, driven by the outbox, and retried when the room loads. When the room could not be written at once the response carries `projectionPending: true`; the SQL result stands.
 
 ## Objects
 
 Link (`pendingProjections` counts card updates not yet written to the board; poll `GET /links` until it is 0 when a response said `projectionPending: true`; the feed carries no projection events):
+
+`Link.cardCount` is the number of cards that currently carry an active ticket link; it is `0` after `createTickets:false`.
 
 ```json
 {

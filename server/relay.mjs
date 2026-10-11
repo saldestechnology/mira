@@ -44,7 +44,7 @@ import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
 import { clientIpOf } from './client-ip.mjs';
 import { createSourceGate } from './source-policy.mjs';
-import { createTrackerProjectionWorker, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
+import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -183,6 +183,27 @@ let roomsFrozen = false;
 function parseRoom(name) {
   const m = typeof name === 'string' ? ROOM_RE.exec(name) : null;
   return m ? { boardId: m[1], kind: m[2] ? 'comments' : 'board' } : null;
+}
+
+function changedObjectIds(transaction, doc) {
+  const objects = doc.getMap('objects');
+  const ids = new Set();
+  for (const [type, keys] of transaction?.changed ?? []) {
+    if (type === objects) {
+      for (const key of keys) if (key !== null && key !== undefined) ids.add(String(key));
+      continue;
+    }
+    let current = type;
+    while (current && current !== objects) {
+      if (current.parent === objects) {
+        const id = current._item?.parentSub;
+        if (typeof id === 'string') ids.add(id);
+        break;
+      }
+      current = current.parent;
+    }
+  }
+  return ids;
 }
 
 // Who may write which room. Anything not listed here (an unknown role or kind) may not write, and nobody writes
@@ -460,6 +481,8 @@ class Room {
     this.pendingBarrierSave = false;
     /** @type {Array<{ ws: import('ws').WebSocket, data: Buffer }>} */
     this.deferredMessages = [];
+    this.trackerGuardTimer = null;
+    this.trackerGuardObjects = new Set();
 
     try {
       let saved;
@@ -479,11 +502,19 @@ class Room {
 
     /** While a guarded message runs, updates wait here and go out as one, so nobody sees a forbidden change. */
     this.held = null;
-    this.doc.on('update', (update) => {
+    this.doc.on('update', (update, origin, _doc, transaction) => {
       this.dirty = true;
       if (this.held) this.held.push(update);
       else this.broadcastUpdate(update);
       this.scheduleSave();
+      if (this.kind === 'board' && config.tracker && directory && this.conns.has(origin)) {
+        try {
+          const ids = changedObjectIds(transaction, this.doc);
+          if (ids.size) this.scheduleTrackerGuard(ids);
+        } catch (err) {
+          log(`room ${this.name}: could not schedule tracker guard`, err?.message);
+        }
+      }
     });
     // Accounts mode: the relay checks comment authorship on every write to a comments room.
     this.guard = directory && this.kind === 'comments'
@@ -650,6 +681,25 @@ class Room {
   setName(title) {
     const meta = this.doc.getMap('meta');
     if (meta.get('name') !== title) this.doc.transact(() => meta.set('name', title), 'relay');
+  }
+
+  scheduleTrackerGuard(objectIds) {
+    for (const id of objectIds) this.trackerGuardObjects.add(id);
+    // no reset on later updates, so steady editing cannot postpone the repair
+    if (this.trackerGuardTimer) return;
+    this.trackerGuardTimer = setTimeout(() => {
+      this.trackerGuardTimer = null;
+      const ids = [...this.trackerGuardObjects];
+      this.trackerGuardObjects.clear();
+      try {
+        reconcileTrackerProjection({
+          directory, roomAccess, boardId: this.name, baseUrl: config.baseUrl, objectIds: ids, origin: 'remote-client',
+        });
+      } catch (err) {
+        log(`room ${this.name}: tracker guard failed`, err?.message);
+      }
+    }, 200);
+    this.trackerGuardTimer.unref?.();
   }
 
 
