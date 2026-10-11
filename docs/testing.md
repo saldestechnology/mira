@@ -30,6 +30,10 @@ A test should prove a **behaviour**, not a **speed**. If a test would still be c
 - Child processes, file locks and renames are slower and stricter on Windows. Poll, do not sleep, and close handles before removing a directory.
 - Run `npm run test:repeat -- <files> --times 15 --platform win32` before you report. It runs the Windows branches of your test 15 times in a row; it does not simulate Windows itself, so CI (and the nightly run on Windows) remains the proof.
 
+## Real HTTP requests in tests
+
+Every test file runs with `test/setup-http.ts`, which wraps the global `fetch` (`test/http-retry.ts`): requests send `connection: close`, so a test that blocked its event loop past the server's keep-alive timeout cannot reuse a socket the server already closed (the Windows `fetch failed` / `ECONNRESET` flakes of 2026-10-10 and 11), and one GET or HEAD that still fails with a reset socket is tried once more, printing a `[http-retry]` line so the retry is visible in the output. Other methods, other errors and a second failure are not touched. A test that stubs `fetch` replaces the wrapper and is unaffected.
+
 ## Starting a relay
 
 Always start a relay child through `startRelayProcess` (`test/start-relay.ts`), never with a hand-written spawn that waits for a line: it reports an early exit with the relay's output and retries a taken port on a fresh one. The per-file starters hid a relay that died before printing `Tabula relay`, consuming the full 30-second limit without useful output in run 38044216287; wait for what the test needs with `until`.

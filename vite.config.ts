@@ -80,6 +80,8 @@ export default defineConfig({
     // test and hook gets room to wait for a relay. Both limits stay well above RELAY_START_MS (test/relay-timing.ts), so
     // a slow start ends in the helper's error, which carries the relay's output, and not in a bare timeout.
     maxWorkers: process.env.CI ? 2 : undefined,
+    // every test file's fetch avoids reused idle sockets and retries one reset GET visibly (test/http-retry.ts)
+    setupFiles: ['./test/setup-http.ts'],
     testTimeout: 60_000,
     hookTimeout: 60_000,
   },
