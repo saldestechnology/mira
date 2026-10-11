@@ -1,0 +1,11 @@
+[Unit]
+Description=Structure check of the pulled Tabula backups (no key on this host)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'for d in @HOME@/store/*/; do @NODE@ @HOME@/bin/restore-check.mjs --store "$d" --structure-only || exit 1; done'
+Nice=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadOnlyPaths=@HOME@/store

@@ -26,6 +26,7 @@ vi.mock('../src/auth', () => ({
   chatAvailable: () => false,
   imagesAvailable: () => false,
   onAuth: () => () => undefined,
+  registerAuthChatReset: () => undefined,
   setSignedIn: vi.fn<(...args: unknown[]) => void>(),
   setSignedOut: vi.fn<(...args: unknown[]) => void>(),
   signOut: vi.fn<(...args: unknown[]) => Promise<void>>(async () => undefined),

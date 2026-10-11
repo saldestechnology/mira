@@ -1,5 +1,5 @@
 import { ApiError, api, type GuestJoin, type Me, type ServerBoard } from './api';
-import { clearChatCache } from './chat-cache';
+import { clearChatCache, clearUserChatCache, purgeOtherUsers } from './chat-cache';
 import { createMeRefresher, meChanged, type MeRefreshDeps } from './cloud-logic';
 
 export type AuthState =
@@ -13,6 +13,9 @@ export type AuthState =
 const ME_KEY = 'driftboard:me';
 const BOARDS_KEY = 'driftboard:server-boards';
 const GUEST_KEY = 'driftboard:guest-session';
+const AUTH_SYNC_KEY = 'driftboard:auth-identity';
+const AUTH_CHANNEL = 'driftboard:auth';
+const SIGNED_OUT_MARKER = '\u0000signed-out';
 
 export interface GuestSession extends GuestJoin {
   /** A terminal relay refusal or a locally observed expiry; retained so reloads stay view-only. */
@@ -22,6 +25,17 @@ export interface GuestSession extends GuestJoin {
 let state: AuthState = { mode: 'unknown' };
 let joinCodesEnabled = false;
 const listeners = new Set<(s: AuthState) => void>();
+let authRevision = 0;
+let authChannel: BroadcastChannel | null = null;
+let authSyncStarted = false;
+let pendingRemoteIdentity: string | null | undefined;
+let pendingChatReset: Promise<void> = Promise.resolve();
+let resetChatForAuth: ((userId: string | null) => Promise<void>) | undefined;
+
+/** Lets the chat store synchronously reset its in-memory state before auth switches identities. */
+export function registerAuthChatReset(reset: (userId: string | null) => Promise<void>) {
+  resetChatForAuth = reset;
+}
 
 export function authState(): AuthState {
   return state;
@@ -70,7 +84,13 @@ export function onAuth(fn: (s: AuthState) => void): () => void {
 
 function commit(next: AuthState): AuthState {
   state = next;
-  for (const fn of listeners) fn(next);
+  for (const fn of Array.from(listeners)) {
+    try {
+      fn(next);
+    } catch {
+      /* One view must not prevent auth state from committing or reach other listeners. */
+    }
+  }
   return next;
 }
 
@@ -92,6 +112,92 @@ function writeStorage(key: string, value: string | null) {
   }
 }
 
+function userIdOf(s: AuthState = state): string | null {
+  return (s.mode === 'signed-in' || s.mode === 'offline') && s.me?.user?.id ? s.me.user.id : null;
+}
+
+function cachedUserId(): string | null {
+  const me = readJson<Me>(ME_KEY);
+  return typeof me?.user?.id === 'string' && me.user.id.length ? me.user.id : null;
+}
+
+function clearIdentityMetadata() {
+  writeStorage(ME_KEY, null);
+  writeStorage(BOARDS_KEY, null);
+  // the bytes of images are private to the signed-in person (docs/images.md); loaded on demand so auth stays light
+  void import('./board-images').then((m) => m.clearAssetCache()).catch(() => undefined);
+}
+
+function clearUserChat(userId: string): Promise<void> {
+  return Promise.resolve()
+    .then(() => resetChatForAuth ? resetChatForAuth(userId) : clearUserChatCache(userId))
+    .then(() => undefined)
+    .catch(() => undefined);
+}
+
+function publishIdentity(userId: string | null) {
+  const message = userId ?? SIGNED_OUT_MARKER;
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      authChannel ??= new BroadcastChannel(AUTH_CHANNEL);
+      authChannel.postMessage(message);
+      // Node's implementation is useful in tests and should not keep a process alive by itself.
+      (authChannel as BroadcastChannel & { unref?: () => void }).unref?.();
+    }
+  } catch {
+    /* the storage event remains available when BroadcastChannel is blocked */
+  }
+  // This key contains only an account id or a sign-out marker; it is the fallback for browsers without BroadcastChannel.
+  writeStorage(AUTH_SYNC_KEY, message);
+}
+
+function receiveIdentity(value: unknown) {
+  if (value !== SIGNED_OUT_MARKER && (typeof value !== 'string' || !value.length)) return;
+  const incoming = value === SIGNED_OUT_MARKER ? null : value as string;
+  if (incoming === null) {
+    if (state.mode === 'signed-out' && !cachedUserId()) return;
+    authRevision++;
+    pendingRemoteIdentity = undefined;
+    clearGuestSession();
+    forgetCaches();
+    commit({ mode: 'signed-out' });
+    return;
+  }
+
+  const previous = userIdOf() ?? cachedUserId();
+  if (previous === incoming) return;
+  if (previous === null && pendingRemoteIdentity === incoming) return;
+  authRevision++;
+  pendingRemoteIdentity = incoming;
+  clearIdentityMetadata();
+  if (previous) {
+    const priorReset = pendingChatReset;
+    pendingChatReset = Promise.all([priorReset.catch(() => undefined), clearUserChat(previous)]).then(() => undefined);
+  }
+  commit({ mode: 'unknown' });
+  // The broadcast carries no profile or message data. Confirm the current session through /api/me before showing chat.
+  void initAuth();
+}
+
+function ensureAuthSync() {
+  if (authSyncStarted) return;
+  authSyncStarted = true;
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      authChannel = new BroadcastChannel(AUTH_CHANNEL);
+      authChannel.onmessage = (event: MessageEvent<unknown>) => receiveIdentity(event.data);
+      (authChannel as BroadcastChannel & { unref?: () => void }).unref?.();
+    }
+  } catch {
+    authChannel = null;
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (event) => {
+      if (event.key === AUTH_SYNC_KEY && event.newValue !== null) receiveIdentity(event.newValue);
+    });
+  }
+}
+
 function readJson<T>(key: string): T | null {
   const raw = readStorage(key);
   if (!raw) return null;
@@ -103,10 +209,7 @@ function readJson<T>(key: string): T | null {
 }
 
 function forgetCaches() {
-  writeStorage(ME_KEY, null);
-  writeStorage(BOARDS_KEY, null);
-  // the bytes of images are private to the signed-in person (docs/images.md); loaded on demand so auth stays light
-  void import('./board-images').then((m) => m.clearAssetCache()).catch(() => undefined);
+  clearIdentityMetadata();
   // chat's saved and unsent messages are the person's too (docs/chat.md, Offline); src/chat.ts forgets its memory itself
   void clearChatCache().catch(() => undefined);
 }
@@ -138,17 +241,39 @@ export function chatAvailable(): boolean {
   return me?.chat === true;
 }
 
+/**
+ * Another person is signed in in this tab than the one the saved lists, image bytes and chat messages on this device belong to
+ * (a sign-in link opened in a tab that someone else left open): what the last one had is not for the next one to see.
+ * Call it BEFORE the new identity is written.
+ */
+async function prepareUserCaches(me: Me) {
+  await pendingChatReset.catch(() => undefined);
+  const nextId = me.user.id;
+  const previousIds = new Set([userIdOf(), cachedUserId()].filter((id): id is string => !!id && id !== nextId));
+  if (previousIds.size) {
+    clearIdentityMetadata();
+    await Promise.all([...previousIds].map((id) => clearUserChat(id)));
+  }
+  // On boot, remove every other account's rows before auth commits and chat can open.
+  await purgeOtherUsers(nextId).catch(() => undefined);
+}
+
 export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Promise<AuthState> {
+  const revision = authRevision;
   let authEnabled: boolean;
   try {
     const config = await a.config();
+    if (revision !== authRevision) return authState();
     authEnabled = config.authEnabled;
     joinCodesEnabled = config.joinCodes === true;
     serverImages = config.images === true;
   } catch {
+    if (revision !== authRevision) return authState();
     const guest = readGuestSession();
     if (guest) return commit({ mode: 'guest', guest });
     const cached = readJson<Me>(ME_KEY);
+    if (cached?.user?.id) await purgeOtherUsers(cached.user.id).catch(() => undefined);
+    if (revision !== authRevision) return authState();
     return commit(cached ? { mode: 'offline', me: cached } : { mode: 'open' });
   }
   if (!authEnabled) {
@@ -158,10 +283,16 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
 
   try {
     const me = await a.me();
+    if (revision !== authRevision) return authState();
+    await prepareUserCaches(me);
+    if (revision !== authRevision) return authState();
     clearGuestSession();
     writeStorage(ME_KEY, JSON.stringify(me));
+    if (pendingRemoteIdentity === me.user.id) pendingRemoteIdentity = undefined;
+    publishIdentity(me.user.id);
     return commit({ mode: 'signed-in', me });
   } catch (err) {
+    if (revision !== authRevision) return authState();
     const guest = readGuestSession();
     if (guest) {
       if (err instanceof ApiError && err.status === 401) {
@@ -174,7 +305,10 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
       setSignedOut();
       return authState();
     }
-    return commit({ mode: 'offline', me: readJson<Me>(ME_KEY) });
+    const cached = readJson<Me>(ME_KEY);
+    if (cached?.user?.id) await purgeOtherUsers(cached.user.id).catch(() => undefined);
+    if (revision !== authRevision) return authState();
+    return commit({ mode: 'offline', me: cached });
   }
 }
 
@@ -198,8 +332,8 @@ export function startMeRefresh(overrides: Partial<MeRefreshDeps> = {}): () => vo
     active: () => state.mode === 'signed-in' && state.me.workspace !== undefined,
     visible: () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
     fetchMe: () => api.me(),
-    apply: (me) => {
-      if (state.mode === 'signed-in' && meChanged(state.me, me)) setSignedIn(me);
+    apply: async (me) => {
+      if (state.mode === 'signed-in' && meChanged(state.me, me)) await setSignedIn(me);
     },
     expired: setSignedOut,
     setInterval: (fn, ms) => setInterval(fn, ms),
@@ -226,13 +360,32 @@ export async function signOut(a: Pick<typeof api, 'logout'> = api): Promise<void
   }
 }
 
-export function setSignedIn(me: Me) {
-  clearGuestSession();
-  writeStorage(ME_KEY, JSON.stringify(me));
-  commit({ mode: 'signed-in', me });
+export function setSignedIn(me: Me): Promise<void> {
+  authRevision++;
+  const revision = authRevision;
+  pendingRemoteIdentity = undefined;
+  const currentId = userIdOf();
+  const storedId = cachedUserId();
+  if (currentId === me.user.id && (!storedId || storedId === me.user.id)) {
+    clearGuestSession();
+    writeStorage(ME_KEY, JSON.stringify(me));
+    publishIdentity(me.user.id);
+    commit({ mode: 'signed-in', me });
+    return Promise.resolve();
+  }
+  return (async () => {
+    await prepareUserCaches(me);
+    if (revision !== authRevision) return;
+    clearGuestSession();
+    writeStorage(ME_KEY, JSON.stringify(me));
+    publishIdentity(me.user.id);
+    commit({ mode: 'signed-in', me });
+  })();
 }
 
 export function setGuest(guest: GuestJoin) {
+  authRevision++;
+  pendingRemoteIdentity = undefined;
   forgetCaches();
   const session: GuestSession = { ...guest };
   delete session.ended;
@@ -241,6 +394,7 @@ export function setGuest(guest: GuestJoin) {
   } catch {
     /* storage is unavailable: this tab can still open the joined board until it reloads */
   }
+  publishIdentity(null);
   commit({ mode: 'guest', guest: session });
 }
 
@@ -256,8 +410,11 @@ export function markGuestSessionEnded(expectedGuestId: string): boolean {
 }
 
 export function leaveGuestSession() {
+  authRevision++;
+  pendingRemoteIdentity = undefined;
   clearGuestSession();
   forgetCaches();
+  publishIdentity(null);
   commit({ mode: 'signed-out' });
 }
 
@@ -273,3 +430,5 @@ export function cachedServerBoards(): ServerBoard[] {
   const list = readJson<ServerBoard[]>(BOARDS_KEY);
   return Array.isArray(list) ? [...list].sort((a, b) => b.updatedAt - a.updatedAt) : [];
 }
+
+ensureAuthSync();

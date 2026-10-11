@@ -170,19 +170,21 @@ The browser accepts PNG, JPEG, GIF, WebP and SVG pictures; SVG is converted to P
 
 ### Backups
 
-Tabula can copy `DATA_DIR` to an S3-compatible bucket on a schedule, encrypted on the instance first (Tigris, Cloudflare R2, Backblaze B2, MinIO, AWS S3). It is off unless the five required variables are all set; some but not all is a startup error that names the missing ones. **Lose the key and the backups cannot be read by anyone.** What is backed up, how it is encrypted, the status endpoint and the limits are in [docs/backups.md](docs/backups.md). **Restore** is built as owner-only routes (`GET /api/admin/backups`, `GET /api/admin/backups/:name`, `POST /api/admin/backups/restore-board` for one board as a copy, `POST /api/admin/backups/restore` for the whole workspace, which restarts the server with exit code 75 and keeps the previous data aside); see [Restoring](docs/backups.md#restoring). The owner restores from **Admin, Backups** (status, the list of backups, one board as a copy, the whole workspace after typing `RESTORE`, and a **Restoring…** screen that waits for the server and reloads); see [In the app](docs/backups.md#in-the-app).
+Tabula can back up `DATA_DIR` on a schedule, encrypted on the instance first. The default target is an S3-compatible bucket (Tigris, Cloudflare R2, Backblaze B2, MinIO, AWS S3); target `dir` writes the same sealed objects and manifests to a local export directory for another process to pull. S3 needs its five destination and key variables; `dir` needs only the key. **Lose the key and the backups cannot be read by anyone.** What is backed up, how it is encrypted, the status endpoint and the limits are in [docs/backups.md](docs/backups.md). **Restore** is built as owner-only routes (`GET /api/admin/backups`, `GET /api/admin/backups/:name`, `POST /api/admin/backups/restore-board` for one board as a copy, `POST /api/admin/backups/restore` for the whole workspace, which restarts the server with exit code 75 and keeps the previous data aside); see [Restoring](docs/backups.md#restoring). The owner restores from **Admin, Backups** (status, the list of backups, one board as a copy, the whole workspace after typing `RESTORE`, and a **Restoring…** screen that waits for the server and reloads); see [In the app](docs/backups.md#in-the-app).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `TABULA_BACKUP_S3_ENDPOINT` | none | Required. The S3 endpoint, `https://` (`http://` for localhost only) |
-| `TABULA_BACKUP_BUCKET` | none | Required. The bucket |
-| `TABULA_BACKUP_ACCESS_KEY` | none | Required. Access key id |
-| `TABULA_BACKUP_SECRET_KEY` | none | Required. Secret access key |
-| `TABULA_BACKUP_KEY` | none | Required. Encryption key: 32 bytes as 64 hex characters or base64 (`openssl rand -hex 32`). Never logged |
+| `TABULA_BACKUP_TARGET` | `s3` | `s3` writes to a bucket; `dir` writes a local export for a separate puller |
+| `TABULA_BACKUP_DIR` | `<DATA_DIR>/backup-export` | Absolute export path for target `dir` |
+| `TABULA_BACKUP_S3_ENDPOINT` | none | Required for `s3`. The endpoint, `https://` (`http://` for localhost only) |
+| `TABULA_BACKUP_BUCKET` | none | Required for `s3`. The bucket |
+| `TABULA_BACKUP_ACCESS_KEY` | none | Required for `s3`. Access key id |
+| `TABULA_BACKUP_SECRET_KEY` | none | Required for `s3`. Secret access key |
+| `TABULA_BACKUP_KEY` | none | Required for both targets. Encryption key: 32 bytes as 64 hex characters or base64 (`openssl rand -hex 32`). Never logged |
 | `TABULA_BACKUP_KEY_PREVIOUS` | none | Older keys, comma separated, to read backups made before a key change |
-| `TABULA_BACKUP_PREFIX` | `tabula` | Where in the bucket everything is stored |
-| `TABULA_BACKUP_REGION` | `auto` | Signing region |
-| `TABULA_BACKUP_PATH_STYLE` | `on` | `off` for virtual hosted style (`bucket.endpoint`) |
+| `TABULA_BACKUP_PREFIX` | `tabula` | Key prefix under the selected target |
+| `TABULA_BACKUP_REGION` | `auto` | Signing region for target `s3` |
+| `TABULA_BACKUP_PATH_STYLE` | `on` | For target `s3`, `off` selects virtual hosted style (`bucket.endpoint`) |
 | `TABULA_BACKUP_INTERVAL_MINUTES` | `60` | Time between backups, 5 to 10080 |
 | `TABULA_BACKUP_SETTLE_SECONDS` | `120` | Also back up this long after the last change (1 to 3600; `0`: only on the interval) |
 | `TABULA_BACKUP_SHUTDOWN_SECONDS` | `4` | Time a graceful shutdown may spend on a final backup (1 to 25; `0`: none). Keep it under the platform's stop timeout (Fly: 5 seconds) |

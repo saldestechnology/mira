@@ -6,7 +6,7 @@
 // closed the badge comes from the `hello` summary and the `unread` frames, which carry counts and never text.
 
 import { ApiError, api, type ChatChannelEntry, type ChatChannelInfo, type ChatMessage } from './api';
-import { authState, chatAvailable, onAuth } from './auth';
+import { authState, chatAvailable, onAuth, registerAuthChatReset } from './auth';
 import * as cache from './chat-cache';
 import {
   CACHE_PER_CHANNEL, KEEP_IN_LIST, PAGE, applyDelete, backoffMs, classifyFailure, countUnread, delivered, enqueue, mergeMessages,
@@ -19,7 +19,9 @@ const KINDS: readonly ChatKind[] = ['board', 'team', 'workspace'];
 const PING_MS = 25_000;
 const PONG_WAIT_MS = 10_000;
 const READ_THROTTLE_MS = 2000;
-/** After a reconnect, pages fetched backwards to close the gap before the list starts over from the newest page. */
+/** Longer than the API fetch timeout; also covers IndexedDB and runtimes without AbortSignal.timeout. */
+const HISTORY_WATCHDOG_MS = 15_000;
+/** Pages fetched backwards after a reconnect before the list starts over from the newest page. */
 const CATCH_UP_PAGES = 5;
 /** Too many sockets of this person (4429): try again much later. */
 const CROWDED_MS = 60_000;
@@ -58,15 +60,31 @@ interface Channel {
   lastRead: number | null;
   newAfter: number | null;
   loading: boolean;
+  /** Socket frames to reconcile after a newest page or catch-up finishes. */
+  arrived: Map<number, Arrival>;
+  /** Newest-page loads, catch-up and older-page reads share this per-channel queue. */
+  historyQueue: Promise<void>;
+  loadTask: Promise<void> | null;
+  catchUpTask: Promise<void> | null;
+  olderTask: Promise<void> | null;
+  catchingUp: boolean;
   loadingOlder: boolean;
   savedOnly: boolean;
   fetchOk: boolean;
   lost: boolean;
   error: string | null;
   visible: boolean;
+  /** Invalidates requests that were in flight when the server denied this channel. */
+  accessRevision: number;
   readPut: number;
   readTimer: ReturnType<typeof setTimeout> | null;
   listeners: Set<() => void>;
+}
+
+interface Arrival {
+  message?: ChatMessage;
+  deletedBy?: 'author' | 'moderator';
+  reactions?: { emoji: string; userIds: string[] }[];
 }
 
 type SocketState = 'idle' | 'connecting' | 'open' | 'stopped';
@@ -90,6 +108,7 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let flushAttempt = 0;
 /** Bumped by resetChat, so an answer that arrives after sign-out changes nothing. */
 let generation = 0;
+let chatUserId: string | null = null;
 let windowHooked = false;
 /** Pages that want the badges without a channel open (the Boards page, the Chat page): the socket stays up for them. */
 let watchers = 0;
@@ -104,12 +123,52 @@ function meId(): string {
   return (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me ? auth.me.user.id : '';
 }
 
+function rememberArrival(ch: Channel, id: number, patch: Arrival) {
+  const arrival = ch.arrived.get(id) ?? {};
+  if (patch.message) {
+    arrival.message = arrival.message ? mergeMessages([arrival.message], [patch.message])[0] : patch.message;
+  }
+  if (patch.deletedBy) arrival.deletedBy = patch.deletedBy;
+  if (patch.reactions) arrival.reactions = patch.reactions;
+  ch.arrived.set(id, arrival);
+}
+
+function reconcileArrivals(messages: ChatMessage[], arrived: Map<number, Arrival>): ChatMessage[] {
+  let result = mergeMessages(messages, [...arrived.values()].flatMap((a) => a.message ? [a.message] : []));
+  for (const [id, arrival] of arrived) {
+    if (arrival.deletedBy) result = applyDelete(result, id, arrival.deletedBy);
+    if (arrival.reactions) result = withReactions(result, id, arrival.reactions);
+  }
+  return result;
+}
+
 const browserOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 
 function emit(ch?: Channel) {
   const targets = ch ? [ch] : [...channels.values()];
-  for (const c of targets) for (const fn of Array.from(c.listeners)) fn();
-  for (const fn of Array.from(badgeListeners)) fn();
+  for (const c of targets) {
+    for (const fn of Array.from(c.listeners)) {
+      try {
+        fn();
+      } catch (err) {
+        /* A view listener must not interrupt store updates or other listeners. */
+        warnListenerFailure(err);
+      }
+    }
+  }
+  for (const fn of Array.from(badgeListeners)) {
+    try {
+      fn();
+    } catch (err) {
+      /* A badge listener must not interrupt store updates or other listeners. */
+      warnListenerFailure(err);
+    }
+  }
+}
+
+function warnListenerFailure(error: unknown) {
+  const detail = error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown error';
+  console.warn(`[chat] listener failed: ${detail}`);
 }
 
 // ---------------------------------------------------------------- socket
@@ -188,8 +247,7 @@ function connect() {
     stopTimers();
     socketState = 'idle';
     if (e.code === 4401) {
-      socketState = 'stopped';
-      signedOut = true;
+      expireChatSession();
     } else if (channels.size || watchers) {
       scheduleReconnect(e.code === 4429 ? CROWDED_MS : backoffMs(attempt++));
     }
@@ -213,14 +271,19 @@ function onFrame(f: Record<string, unknown>) {
     workspaceReadOnly = f.readOnly === true;
     unread.clear();
     for (const c of Array.isArray(f.channels) ? f.channels : []) {
-      if (c && isKind(c.kind) && typeof c.ref === 'string') unread.set(keyOf(c.kind, c.ref), { unread: Number(c.unread) || 0, mentions: Number(c.mentions) || 0, lastId: Number(c.lastId) || 0 });
+      if (!c || !isKind(c.kind) || typeof c.ref !== 'string') continue;
+      const key = keyOf(c.kind, c.ref);
+      if (channels.get(key)?.lost) continue;
+      unread.set(key, { unread: Number(c.unread) || 0, mentions: Number(c.mentions) || 0, lastId: Number(c.lastId) || 0 });
     }
     for (const ch of channels.values()) {
       if (ch.info) ch.info = { ...ch.info, access: withReadOnly(ch.info.access, workspaceReadOnly) };
       if (!ch.visible) continue;
       sendFrame({ t: 'sub', kind: ch.kind, ref: ch.ref });
-      if (ch.loading) continue;
-      if (!ch.fetchOk) void load(ch);
+      if (!ch.fetchOk) {
+        void load(ch);
+        if (reconnect && ch.loading) void catchUp(ch);
+      }
       else if (reconnect) void catchUp(ch);
     }
     void flush();
@@ -236,11 +299,13 @@ function onFrame(f: Record<string, unknown>) {
     return;
   }
   if (t === 'unread') {
+    if (ch?.lost) return;
     unread.set(key, { ...unread.get(key), unread: Number(f.unread) || 0, mentions: Number(f.mentions) || 0 });
     emit();
     return;
   }
   if (t === 'read') {
+    if (ch?.lost) return;
     const lastId = Number(f.lastId) || 0;
     unread.set(key, { unread: 0, mentions: 0, lastId });
     if (ch) ch.lastRead = Math.max(ch.lastRead ?? 0, lastId);
@@ -249,22 +314,29 @@ function onFrame(f: Record<string, unknown>) {
   }
   if (!ch) return;
   if ((t === 'message' || t === 'edit') && isMessage(f.message)) {
+    if (ch.lost) return;
     if (!ch.visible) return;
-    ch.messages = keepBounded(ch, mergeMessages(ch.messages, [f.message]));
+    if (ch.loading || ch.catchingUp || ch.loadingOlder) rememberArrival(ch, f.message.id, { message: f.message });
+    ch.messages = keepBounded(ch, reconcileArrivals(mergeMessages(ch.messages, [f.message]), ch.arrived));
     settleDelivered([f.message]);
     saveChannel(ch);
     emit(ch);
   } else if (t === 'reaction' && typeof f.id === 'number' && Array.isArray(f.reactions)) {
-    ch.messages = withReactions(ch.messages, f.id, f.reactions as { emoji: string; userIds: string[] }[]);
+    if (ch.lost) return;
+    const reactions = f.reactions as { emoji: string; userIds: string[] }[];
+    if (ch.loading || ch.catchingUp || ch.loadingOlder) rememberArrival(ch, f.id, { reactions });
+    ch.messages = withReactions(ch.messages, f.id, reactions);
     saveChannel(ch);
     emit(ch);
   } else if (t === 'delete' && typeof f.id === 'number') {
-    ch.messages = applyDelete(ch.messages, f.id, f.by === 'moderator' ? 'moderator' : 'author');
+    if (ch.lost) return;
+    const deletedBy = f.by === 'moderator' ? 'moderator' : 'author';
+    if (ch.loading || ch.catchingUp || ch.loadingOlder) rememberArrival(ch, f.id, { deletedBy });
+    ch.messages = applyDelete(ch.messages, f.id, deletedBy);
     saveChannel(ch);
     emit(ch);
   } else if (t === 'closed' || (t === 'denied' && f.reason !== 'too_many')) {
-    ch.lost = true;
-    emit(ch);
+    denyChannel(ch);
   } else if (t === 'readonly') {
     workspaceReadOnly = f.on === true;
     for (const c of channels.values()) {
@@ -293,47 +365,160 @@ function keepBounded(ch: Channel, list: ChatMessage[]): ChatMessage[] {
 }
 
 function saveChannel(ch: Channel) {
-  if (!ch.fetchOk) return;
-  void cache.writeChannel({ key: ch.key, messages: ch.messages.slice(-CACHE_PER_CHANNEL), savedAt: Date.now() });
+  const userId = meId();
+  if (!ch.fetchOk || ch.lost || !userId) return;
+  void cache.writeChannel(userId, { key: ch.key, messages: ch.messages.slice(-CACHE_PER_CHANNEL), savedAt: Date.now() });
+}
+
+/** A definitive refusal makes saved history and drafts for this channel unusable in this tab. */
+function denyChannel(ch: Channel) {
+  ch.accessRevision++;
+  ch.messages = [];
+  ch.info = null;
+  ch.next = null;
+  ch.loading = false;
+  ch.catchingUp = false;
+  ch.loadingOlder = false;
+  ch.fetchOk = false;
+  ch.savedOnly = false;
+  ch.lost = true;
+  ch.lastRead = null;
+  ch.newAfter = null;
+  ch.error = null;
+  ch.arrived.clear();
+  unread.delete(ch.key);
+
+  const removed = outbox.filter((item) => item.kind === ch.kind && item.ref === ch.ref);
+  outbox = outbox.filter((item) => item.kind !== ch.kind || item.ref !== ch.ref);
+  const userId = meId();
+  if (userId) {
+    try {
+      void cache.deleteChannel(userId, ch.key).catch(() => undefined);
+      for (const item of removed) void cache.deleteOutbox(userId, item.clientId).catch(() => undefined);
+    } catch {
+      /* The live view is cleared even when local storage is unavailable. */
+    }
+  }
+  emit(ch);
+}
+
+function denyChannelRef(kind: ChatKind, ref: string) {
+  const ch = channels.get(keyOf(kind, ref));
+  if (ch) {
+    denyChannel(ch);
+    return;
+  }
+  const key = keyOf(kind, ref);
+  unread.delete(key);
+  const removed = outbox.filter((item) => item.kind === kind && item.ref === ref);
+  outbox = outbox.filter((item) => item.kind !== kind || item.ref !== ref);
+  const userId = meId();
+  if (userId) {
+    try {
+      void cache.deleteChannel(userId, key).catch(() => undefined);
+      for (const item of removed) void cache.deleteOutbox(userId, item.clientId).catch(() => undefined);
+    } catch {
+      /* The live view is cleared even when local storage is unavailable. */
+    }
+  }
+  emit();
+}
+
+function expireChatSession() {
+  void resetChat(undefined, true).catch(() => undefined);
+}
+
+function handleChatFailure(ch: Channel, error: unknown) {
+  if (error instanceof ApiError && error.status === 404) denyChannel(ch);
+  else if (error instanceof ApiError && error.status === 401) expireChatSession();
 }
 
 async function refreshInfo(ch: Channel) {
-  const gen = generation;
+  const request = historyRequest(ch);
   try {
     const info = await api.chatChannel(ch.kind, ch.ref);
-    if (gen !== generation) return;
+    if (!currentHistoryRequest(ch, request)) return;
     ch.info = { ...info, access: withReadOnly(info.access, workspaceReadOnly || info.access.readOnly) };
     ch.lost = false;
   } catch (err) {
-    if (gen !== generation) return;
-    if (err instanceof ApiError && err.status === 404) ch.lost = true;
+    if (!currentHistoryRequest(ch, request)) return;
+    handleChatFailure(ch, err);
   }
-  emit(ch);
+  if (currentHistoryRequest(ch, request)) emit(ch);
 }
 
-/** Opening the tab: the saved copy at once, then the channel, the newest page and where this person had read to. */
-async function load(ch: Channel) {
-  const gen = generation;
+interface HistoryRequest { generation: number; userId: string; accessRevision: number }
+
+function historyRequest(ch: Channel): HistoryRequest {
+  return { generation, userId: meId(), accessRevision: ch.accessRevision };
+}
+
+function currentHistoryRequest(ch: Channel, request: HistoryRequest): boolean {
+  return request.generation === generation && request.userId === meId() && request.accessRevision === ch.accessRevision;
+}
+
+function withHistoryWatchdog<T>(request: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Chat history request timed out')), HISTORY_WATCHDOG_MS);
+    request.then(
+      (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function queueHistory(ch: Channel, work: () => Promise<void>): Promise<void> {
+  const task = ch.historyQueue.catch(() => undefined).then(work);
+  ch.historyQueue = task.then(() => undefined, () => undefined);
+  return task;
+}
+
+/** Opening the tab: the saved copy for the confirmed account, then the channel and newest page. */
+function load(ch: Channel): Promise<void> {
+  if (ch.loadTask) return ch.loadTask;
+  const request = historyRequest(ch);
+  const task = queueHistory(ch, () => loadChannel(ch, request));
+  ch.loadTask = task;
+  void task.then(() => {
+    if (ch.loadTask === task) ch.loadTask = null;
+  }, () => {
+    if (ch.loadTask === task) ch.loadTask = null;
+  });
+  return task;
+}
+
+async function loadChannel(ch: Channel, request: HistoryRequest) {
+  if (!currentHistoryRequest(ch, request)) return;
+  const { userId } = request;
+  const skipCache = ch.lost;
   ch.loading = true;
+  ch.arrived = new Map();
   ch.error = null;
   emit(ch);
-  if (!ch.messages.length) {
-    const saved = await cache.readChannel(ch.key);
-    if (gen !== generation) return;
-    if (saved && !ch.messages.length) ch.messages = saved.messages;
-    emit(ch);
-  }
   try {
+    if (!userId) return;
+    if (!skipCache && !ch.messages.length) {
+      const saved = await withHistoryWatchdog(cache.readChannel(userId, ch.key));
+      if (!currentHistoryRequest(ch, request)) return;
+      if (saved) ch.messages = reconcileArrivals(mergeMessages(saved.messages, ch.messages), ch.arrived);
+      emit(ch);
+    }
     const [info, page, summary] = await Promise.all([
-      api.chatChannel(ch.kind, ch.ref),
-      api.chatMessages(ch.kind, ch.ref, { limit: PAGE }),
-      api.chatUnread().catch(() => null),
+      withHistoryWatchdog(api.chatChannel(ch.kind, ch.ref)),
+      withHistoryWatchdog(api.chatMessages(ch.kind, ch.ref, { limit: PAGE })),
+      withHistoryWatchdog(api.chatUnread().catch(() => null)),
     ]);
-    if (gen !== generation) return;
+    if (!currentHistoryRequest(ch, request)) return;
     ch.info = { ...info, access: withReadOnly(info.access, workspaceReadOnly || info.access.readOnly) };
-    // frames that arrived while the page was on its way are newer than it and stay; the saved copy does not
-    const top = newestId(page.messages);
-    ch.messages = mergeMessages(page.messages, ch.messages.filter((m) => m.id > top));
+    // Saved history is provisional until this account's server answers. Keep socket arrivals and discard anything purged there.
+    ch.messages = reconcileArrivals(page.messages, ch.arrived);
+    ch.arrived.clear();
     ch.next = page.next;
     ch.fetchOk = true;
     ch.savedOnly = false;
@@ -346,65 +531,87 @@ async function load(ch: Channel) {
     settleDelivered(ch.messages);
     saveChannel(ch);
   } catch (err) {
-    if (gen !== generation) return;
+    if (!currentHistoryRequest(ch, request)) return;
+    handleChatFailure(ch, err);
+    if (!currentHistoryRequest(ch, request) || ch.lost) return;
     ch.fetchOk = false;
     if (err instanceof ApiError && err.status === 429) {
       // asked too often (the server limits these reads per person): try again when it says, still loading meanwhile
       const wait = typeof err.facts.retryAfter === 'number' ? err.facts.retryAfter : 5;
       setTimeout(() => {
-        if (gen === generation && ch.visible && !ch.fetchOk && !ch.loading) void load(ch);
+        if (request.generation === generation && request.userId === meId() && ch.visible && !ch.fetchOk && !ch.loading) void load(ch);
       }, Math.max(1, wait) * 1000);
       ch.savedOnly = ch.messages.length > 0;
-    } else if (err instanceof ApiError && err.status === 404) ch.lost = true;
-    else if (err instanceof ApiError && err.status === 401) signedOut = true;
-    else ch.savedOnly = true;
+    } else ch.savedOnly = true;
+    // A socket edit or tombstone may have arrived while the offline cache or failed REST page was pending.
+    ch.messages = reconcileArrivals(ch.messages, ch.arrived);
+    ch.arrived.clear();
     if (ch.savedOnly && !ch.messages.length) ch.error = 'Chat could not be reached and nothing is saved on this device yet.';
   } finally {
-    if (gen === generation) {
+    if (currentHistoryRequest(ch, request)) {
       ch.loading = false;
+      ch.loadTask = null;
       emit(ch);
     }
   }
 }
 
-/** After a reconnect: everything after the last known id, merged by id, so nothing said meanwhile is missing. */
-async function catchUp(ch: Channel) {
-  const gen = generation;
+/** After a reconnect, replace cached history with the server's retained page set plus frames received during the fetch. */
+function catchUp(ch: Channel): Promise<void> {
+  if (ch.catchUpTask) return ch.catchUpTask;
+  const request = historyRequest(ch);
+  const task = queueHistory(ch, () => catchUpChannel(ch, request));
+  ch.catchUpTask = task;
+  void task.then(() => {
+    if (ch.catchUpTask === task) ch.catchUpTask = null;
+  }, () => {
+    if (ch.catchUpTask === task) ch.catchUpTask = null;
+  });
+  return task;
+}
+
+async function catchUpChannel(ch: Channel, request: HistoryRequest) {
+  if (!currentHistoryRequest(ch, request) || !request.userId || !ch.fetchOk || ch.lost) return;
   const known = newestId(ch.messages);
+  ch.catchingUp = true;
+  ch.arrived = new Map();
   try {
     let fetched: ChatMessage[] = [];
     let next: number | null = null;
     let before: number | undefined;
     for (let i = 0; i < CATCH_UP_PAGES; i++) {
-      const page = await api.chatMessages(ch.kind, ch.ref, { limit: PAGE, before });
-      if (gen !== generation) return;
+      const page = await withHistoryWatchdog(api.chatMessages(ch.kind, ch.ref, { limit: PAGE, before }));
+      if (!currentHistoryRequest(ch, request)) return;
       fetched = mergeMessages(fetched, page.messages);
       next = page.next;
       if (!page.messages.length || next === null || oldestId(page.messages) <= known + 1) break;
       before = oldestId(page.messages);
     }
-    const closed = next === null || oldestId(fetched) <= known + 1 || fetched.length === 0;
-    if (closed) {
-      ch.messages = keepBounded(ch, mergeMessages(ch.messages, fetched));
-    } else {
-      // the gap is too wide to fill: start over from the newest pages
-      ch.messages = fetched;
-      ch.next = next;
-    }
+    // The server page set is authoritative: cached ids absent from it may have been deleted or aged out.
+    ch.messages = keepBounded(ch, reconcileArrivals(fetched, ch.arrived));
+    ch.next = next;
+    ch.arrived.clear();
     ch.fetchOk = true;
     ch.savedOnly = false;
-    settleDelivered(fetched);
+    settleDelivered(ch.messages);
     saveChannel(ch);
-  } catch {
-    if (gen !== generation) return;
+  } catch (err) {
+    if (!currentHistoryRequest(ch, request)) return;
+    handleChatFailure(ch, err);
+  } finally {
+    if (currentHistoryRequest(ch, request)) {
+      ch.catchingUp = false;
+      ch.arrived.clear();
+    }
   }
-  emit(ch);
+  if (currentHistoryRequest(ch, request)) emit(ch);
 }
 
 // ---------------------------------------------------------------- outbox
 
 function persist(item: OutboxItem | undefined) {
-  if (item) void cache.putOutbox(item);
+  const userId = meId();
+  if (item && userId) void cache.putOutbox(userId, item);
 }
 
 function setItem(clientId: string, patch: Partial<OutboxItem>) {
@@ -414,7 +621,8 @@ function setItem(clientId: string, patch: Partial<OutboxItem>) {
 
 function dropItem(clientId: string) {
   outbox = removeItem(outbox, clientId);
-  void cache.deleteOutbox(clientId);
+  const userId = meId();
+  if (userId) void cache.deleteOutbox(userId, clientId);
 }
 
 /** Messages the server has: their outbox entries go (a send whose answer was lost shows up as a frame or in a page). */
@@ -425,7 +633,11 @@ function settleDelivered(messages: ChatMessage[]) {
 }
 
 function ensureOutbox(): Promise<void> {
-  outboxLoad ??= cache.readOutbox().then((saved) => {
+  const gen = generation;
+  const userId = meId();
+  if (!userId) return Promise.resolve();
+  outboxLoad ??= cache.readOutbox(userId).then((saved) => {
+    if (gen !== generation || userId !== meId()) return;
     const merged = revive(saved).reduce((list, item) => enqueue(list, item), outbox);
     outbox = merged;
     emit();
@@ -445,27 +657,37 @@ function scheduleFlush(ms: number) {
 /** Sends the outbox oldest first, one at a time. A refusal for good stays with its reason; anything else waits. */
 async function flush() {
   if (flushing || !browserOnline()) return;
+  const userId = meId();
+  if (!userId) return;
   flushing = true;
   const gen = generation;
   try {
     for (;;) {
-      if (gen !== generation || !browserOnline()) break;
+      if (gen !== generation || userId !== meId() || !browserOnline()) break;
       const item = nextToSend(outbox, Date.now());
       if (!item) break;
       setItem(item.clientId, { state: 'sending', reason: undefined, waitUntil: undefined });
       emit();
+      const requestedChannel = channels.get(`${item.kind}/${item.ref}`);
+      const request = requestedChannel ? historyRequest(requestedChannel) : null;
       try {
         const { message } = await api.chatSend(item.kind, item.ref, { clientId: item.clientId, text: item.text, replyTo: item.replyTo, objectId: item.objectId });
-        if (gen !== generation) break;
+        if (gen !== generation || userId !== meId()) break;
         dropItem(item.clientId);
         flushAttempt = 0;
         const ch = channels.get(`${item.kind}/${item.ref}`);
-        if (ch?.visible) ch.messages = keepBounded(ch, mergeMessages(ch.messages, [message]));
-        if (ch) saveChannel(ch);
+        if (ch && ch === requestedChannel && request && !ch.lost && currentHistoryRequest(ch, request)) {
+          if (ch.visible) ch.messages = keepBounded(ch, mergeMessages(ch.messages, [message]));
+          saveChannel(ch);
+        }
         emit();
       } catch (err) {
-        if (gen !== generation) break;
+        if (gen !== generation || userId !== meId()) break;
         const failure = err instanceof ApiError ? classifyFailure(err.status, err.code, typeof err.facts.retryAfter === 'number' ? err.facts.retryAfter : undefined) : classifyFailure(0, 'network');
+        if (err instanceof ApiError && err.status === 404) {
+          denyChannelRef(item.kind as ChatKind, item.ref);
+          break;
+        }
         if (failure.kind === 'permanent') {
           setItem(item.clientId, { state: 'blocked', reason: failure.reason });
           emit();
@@ -475,8 +697,8 @@ async function flush() {
           setItem(item.clientId, { state: 'queued', reason: 'Slow down a moment', waitUntil: Date.now() + failure.ms });
           scheduleFlush(failure.ms);
         } else if (failure.kind === 'signed-out') {
-          signedOut = true;
-          setItem(item.clientId, { state: 'failed', reason: 'sign in again to send it' });
+          expireChatSession();
+          break;
         } else {
           setItem(item.clientId, { state: 'failed', reason: undefined });
           scheduleFlush(backoffMs(flushAttempt++));
@@ -486,7 +708,7 @@ async function flush() {
       }
     }
   } finally {
-    flushing = false;
+    if (gen === generation) flushing = false;
   }
 }
 
@@ -501,6 +723,7 @@ export function boardUnread(boardId: string): { unread: number; mentions: number
 export function channelUnread(kind: ChatKind, ref: string): { unread: number; mentions: number } {
   const key = keyOf(kind, ref);
   const ch = channels.get(key);
+  if (ch?.lost) return { unread: 0, mentions: 0 };
   if (ch?.visible && ch.fetchOk && ch.lastRead !== null) {
     const me = meId();
     const after = ch.messages.filter((m) => m.id > (ch.lastRead ?? 0) && !m.deleted && m.authorId !== me);
@@ -537,8 +760,10 @@ export function openBoardChat(boardId: string, signal: AbortSignal): BoardChat {
 export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): BoardChat {
   const key = keyOf(kind, ref);
   const ch: Channel = channels.get(key) ?? {
-    key, kind, ref, messages: [], next: null, info: null, lastRead: null, newAfter: null, loading: false, loadingOlder: false,
-    savedOnly: false, fetchOk: false, lost: false, error: null, visible: false, readPut: 0, readTimer: null, listeners: new Set(),
+    key, kind, ref, messages: [], next: null, info: null, lastRead: null, newAfter: null, loading: false,
+    arrived: new Map(), historyQueue: Promise.resolve(), loadTask: null, catchUpTask: null, olderTask: null,
+    catchingUp: false, loadingOlder: false,
+    savedOnly: false, fetchOk: false, lost: false, error: null, visible: false, accessRevision: 0, readPut: 0, readTimer: null, listeners: new Set(),
   };
   channels.set(key, ch);
   void ensureOutbox();
@@ -563,7 +788,10 @@ export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): Boar
     ch.lastRead = Math.max(ch.lastRead ?? 0, newest);
     unread.set(key, { unread: 0, mentions: 0, lastId: ch.lastRead });
     emit(ch);
-    api.chatRead(ch.kind, ch.ref, newest).catch(() => undefined);
+    const request = historyRequest(ch);
+    api.chatRead(ch.kind, ch.ref, newest).catch((err) => {
+      if (currentHistoryRequest(ch, request)) handleChatFailure(ch, err);
+    });
   }
 
   return {
@@ -609,23 +837,37 @@ export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): Boar
       }
     },
     async loadOlder() {
-      if (ch.loadingOlder || ch.next === null || !ch.fetchOk) return;
-      const gen = generation;
-      ch.loadingOlder = true;
-      emit(ch);
-      try {
-        const page = await api.chatMessages(ch.kind, ch.ref, { limit: PAGE, before: oldestId(ch.messages) || undefined });
-        if (gen !== generation) return;
-        ch.messages = mergeMessages(ch.messages, page.messages);
-        ch.next = page.next;
-      } catch {
-        /* the list stays as it is; scrolling up again tries again */
-      } finally {
-        if (gen === generation) {
-          ch.loadingOlder = false;
-          emit(ch);
+      if (ch.olderTask) return ch.olderTask;
+      const request = historyRequest(ch);
+      const task = queueHistory(ch, async () => {
+        if (!currentHistoryRequest(ch, request) || !request.userId || ch.next === null || !ch.fetchOk || ch.lost) return;
+        ch.loadingOlder = true;
+        ch.arrived = new Map();
+        emit(ch);
+        try {
+          const page = await withHistoryWatchdog(api.chatMessages(ch.kind, ch.ref, { limit: PAGE, before: oldestId(ch.messages) || undefined }));
+          if (!currentHistoryRequest(ch, request)) return;
+          ch.messages = reconcileArrivals(mergeMessages(ch.messages, page.messages), ch.arrived);
+          ch.next = page.next;
+          ch.arrived.clear();
+        } catch (err) {
+          if (currentHistoryRequest(ch, request)) handleChatFailure(ch, err);
+          /* The list stays as it is; scrolling up again tries again. */
+        } finally {
+          if (currentHistoryRequest(ch, request)) {
+            ch.loadingOlder = false;
+            ch.arrived.clear();
+            emit(ch);
+          }
         }
-      }
+      });
+      ch.olderTask = task;
+      void task.then(() => {
+        if (ch.olderTask === task) ch.olderTask = null;
+      }, () => {
+        if (ch.olderTask === task) ch.olderTask = null;
+      });
+      return task;
     },
     send(text, replyTo, objectId = null) {
       const item = outboxItem({ clientId: newClientId(), kind: ch.kind, ref: ch.ref, text, replyTo, objectId, createdLocal: Date.now() });
@@ -647,23 +889,44 @@ export function openChat(kind: ChatKind, ref: string, signal: AbortSignal): Boar
       emit();
     },
     async edit(id, text) {
-      const { message } = await api.chatEdit(id, text);
-      ch.messages = mergeMessages(ch.messages, [message]);
-      saveChannel(ch);
-      emit(ch);
+      const request = historyRequest(ch);
+      try {
+        const { message } = await api.chatEdit(id, text);
+        if (!currentHistoryRequest(ch, request)) return;
+        ch.messages = mergeMessages(ch.messages, [message]);
+        saveChannel(ch);
+        emit(ch);
+      } catch (err) {
+        if (currentHistoryRequest(ch, request)) handleChatFailure(ch, err);
+        throw err;
+      }
     },
     async remove(id) {
-      await api.chatDelete(id);
-      const by = ch.messages.find((m) => m.id === id)?.authorId === meId() ? 'author' : 'moderator';
-      ch.messages = applyDelete(ch.messages, id, by);
-      saveChannel(ch);
-      emit(ch);
+      const request = historyRequest(ch);
+      try {
+        await api.chatDelete(id);
+        if (!currentHistoryRequest(ch, request)) return;
+        const by = ch.messages.find((m) => m.id === id)?.authorId === request.userId ? 'author' : 'moderator';
+        ch.messages = applyDelete(ch.messages, id, by);
+        saveChannel(ch);
+        emit(ch);
+      } catch (err) {
+        if (currentHistoryRequest(ch, request)) handleChatFailure(ch, err);
+        throw err;
+      }
     },
     async react(id, emoji, on) {
-      const { reactions } = await api.chatReact(id, emoji, on);
-      ch.messages = withReactions(ch.messages, id, reactions);
-      saveChannel(ch);
-      emit(ch);
+      const request = historyRequest(ch);
+      try {
+        const { reactions } = await api.chatReact(id, emoji, on);
+        if (!currentHistoryRequest(ch, request)) return;
+        ch.messages = withReactions(ch.messages, id, reactions);
+        saveChannel(ch);
+        emit(ch);
+      } catch (err) {
+        if (currentHistoryRequest(ch, request)) handleChatFailure(ch, err);
+        throw err;
+      }
     },
     markRead() {
       if (!ch.visible || ch.readTimer) return;
@@ -716,11 +979,19 @@ export function watchChat(signal: AbortSignal): void {
  */
 export async function fetchChannels(): Promise<ChatChannelEntry[]> {
   const gen = generation;
-  const { channels: list } = await api.chatChannels();
-  if (gen !== generation) return [];
+  const userId = meId();
+  let list: ChatChannelEntry[];
+  try {
+    ({ channels: list } = await api.chatChannels());
+  } catch (err) {
+    if (gen === generation && userId === meId() && err instanceof ApiError && err.status === 401) expireChatSession();
+    throw err;
+  }
+  if (gen !== generation || userId !== meId()) return [];
   for (const c of list) {
     const key = keyOf(c.kind, c.ref);
-    if (channels.get(key)?.visible) continue;
+    const ch = channels.get(key);
+    if (ch?.lost || ch?.visible) continue;
     unread.set(key, { unread: c.unread, mentions: c.mentions, lastId: c.lastId });
   }
   emit();
@@ -739,12 +1010,13 @@ export function onChatBadge(fn: () => void): () => void {
   return () => badgeListeners.delete(fn);
 }
 
-/** Sign-out: the socket closes and every message kept in this browser, sent or not, is forgotten. */
-export function resetChat(): Promise<void> {
+/** Reset on sign-out or account change. An account id clears just its saved rows; no id clears the full browser cache. */
+export function resetChat(userIdToClear?: string | null, sessionExpired = false): Promise<void> {
   generation++;
+  chatUserId = null;
   const ws = socket;
   socket = null;
-  socketState = 'idle';
+  socketState = sessionExpired ? 'stopped' : 'idle';
   stopTimers();
   if (reconnectTimer) clearTimeout(reconnectTimer);
   if (flushTimer) clearTimeout(flushTimer);
@@ -758,21 +1030,72 @@ export function resetChat(): Promise<void> {
   attempt = 0;
   flushAttempt = 0;
   helloSeen = false;
-  signedOut = false;
+  signedOut = sessionExpired || authState().mode === 'signed-out';
   workspaceReadOnly = false;
   unread.clear();
   for (const ch of channels.values()) {
     ch.messages = [];
     ch.info = null;
     ch.next = null;
+    ch.loading = false;
+    ch.accessRevision++;
+    ch.historyQueue = Promise.resolve();
+    ch.loadTask = null;
+    ch.catchUpTask = null;
+    ch.olderTask = null;
+    ch.catchingUp = false;
+    ch.arrived.clear();
+    ch.loadingOlder = false;
+    ch.fetchOk = false;
+    ch.savedOnly = false;
+    ch.lost = false;
+    ch.lastRead = null;
+    ch.newAfter = null;
+    ch.error = null;
+    ch.readPut = 0;
+    if (ch.readTimer) clearTimeout(ch.readTimer);
+    ch.readTimer = null;
   }
   outbox = [];
   outboxLoad = null;
   flushing = false;
-  return cache.clearChatCache();
+  emit();
+  try {
+    return Promise.resolve(userIdToClear ? cache.clearUserChatCache(userIdToClear) : cache.clearChatCache())
+      .then(() => undefined)
+      .catch(() => undefined);
+  } catch {
+    return Promise.resolve();
+  }
 }
 
-// Signing out anywhere in the app ends chat in this tab (auth.ts deletes the saved copy).
+// Signing out anywhere in the app ends chat in this tab (auth.ts deletes the saved copy), and so does another person signing in:
+// a socket the server bound to the first person's session would keep delivering their private messages to the second.
+function reconnectVisibleChat() {
+  if (chatAvailable() && (watchers > 0 || [...channels.values()].some((ch) => ch.visible))) connect();
+}
+
+if (typeof registerAuthChatReset === 'function') registerAuthChatReset((userId) => resetChat(userId));
+
 onAuth((state) => {
-  if (state.mode === 'signed-out') void resetChat();
+  const nextId = (state.mode === 'signed-in' || state.mode === 'offline') && state.me ? state.me.user.id : null;
+  if (!nextId) {
+    const previousId = chatUserId;
+    chatUserId = null;
+    if (previousId && state.mode !== 'signed-out' && state.mode !== 'guest' && state.mode !== 'open') void resetChat(previousId);
+    else if (state.mode === 'signed-out' || state.mode === 'guest' || state.mode === 'open') void resetChat();
+    return;
+  }
+  if (chatUserId !== null && chatUserId !== nextId) {
+    void resetChat(chatUserId);
+    chatUserId = nextId;
+    reconnectVisibleChat();
+    return;
+  }
+  chatUserId = nextId;
+  if (signedOut) {
+    signedOut = false;
+    if (socketState === 'stopped') socketState = 'idle';
+  }
+  reconnectVisibleChat();
 });

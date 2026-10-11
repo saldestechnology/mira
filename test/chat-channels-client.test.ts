@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, type ChatChannelEntry, type ChatMessage } from '../src/api';
-import { initAuth } from '../src/auth';
+import { initAuth, setSignedIn } from '../src/auth';
 import {
   channelUnread, fetchChannels, hasUnlisted, onChatBadge, onMention, openChat, resetChat, totalUnread, watchChat,
 } from '../src/chat';
@@ -266,5 +266,66 @@ describe('reactions and mention notices', () => {
     off();
     ws.say({ t: 'mention', kind: 'team', ref: 't1', id: 5, from: { name: 'Ana' }, channel: 'Design', text: 'later' });
     expect(seen).toHaveLength(1);
+  });
+});
+
+describe('what is kept in this tab when the history or the person changes', () => {
+  const ready = async (kind: 'team' | 'workspace', ref: string, page: ChatMessage[]) => {
+    vi.spyOn(api, 'chatChannel').mockResolvedValue({ kind, ref, access: { write: true, moderate: false, role: 'member', readOnly: false }, people: [] });
+    vi.spyOn(api, 'chatUnread').mockResolvedValue({ channels: [] });
+    vi.spyOn(api, 'chatMessages').mockResolvedValue({ messages: page, next: null });
+    const chat = openChat(kind, ref, life.signal);
+    chat.setVisible(true);
+    await vi.advanceTimersByTimeAsync(10);
+    return chat;
+  };
+
+  it('drops what retention or erasure removed: an empty successful page empties the saved copy', async () => {
+    const chat = await ready('workspace', 'main', [message(1, 'workspace', 'main'), message(2, 'workspace', 'main')]);
+    expect(chat.view().messages.map((m) => m.id)).toEqual([1, 2]);
+    chat.setVisible(false);
+    vi.spyOn(api, 'chatMessages').mockResolvedValue({ messages: [], next: null });
+    chat.setVisible(true);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(chat.view().messages).toEqual([]);
+  });
+
+  it('keeps a message that arrived on the socket while the page was on its way, and nothing else saved', async () => {
+    const chat = await ready('workspace', 'main', [message(1, 'workspace', 'main'), message(2, 'workspace', 'main')]);
+    const ws = lastSocket();
+    ws.open();
+    ws.say({ t: 'hello', readOnly: false, channels: [] });
+    chat.setVisible(false);
+    let answer!: (v: { messages: ChatMessage[]; next: number | null }) => void;
+    vi.spyOn(api, 'chatMessages').mockReturnValue(new Promise((r) => (answer = r)));
+    chat.setVisible(true);
+    await vi.advanceTimersByTimeAsync(5);
+    ws.say({ t: 'message', kind: 'workspace', ref: 'main', message: message(9, 'workspace', 'main') });
+    answer({ messages: [message(5, 'workspace', 'main')], next: null });
+    await vi.advanceTimersByTimeAsync(5);
+    expect(chat.view().messages.map((m) => m.id)).toEqual([5, 9]);
+  });
+
+  it('closes the socket and forgets the first person when another one signs in in the same tab', async () => {
+    watchChat(life.signal);
+    const first = lastSocket();
+    first.open();
+    first.say({ t: 'hello', readOnly: false, channels: [{ kind: 'team', ref: 't1', unread: 3, mentions: 1, lastId: 9 }] });
+    expect(totalUnread()).toEqual({ unread: 3, mentions: 1 });
+    setSignedIn({ user: { id: 'someone-else', email: 'else@example.test', name: 'Else', role: 'member' }, teams: [], chat: true } as never);
+    await vi.advanceTimersByTimeAsync(5);
+    expect(first.readyState).toBe(3);
+    expect(totalUnread()).toEqual({ unread: 0, mentions: 0 });
+  });
+
+  it('keeps the socket when the same person signs in again', async () => {
+    watchChat(life.signal);
+    const first = lastSocket();
+    first.open();
+    first.say({ t: 'hello', readOnly: false, channels: [{ kind: 'team', ref: 't1', unread: 3, mentions: 1, lastId: 9 }] });
+    setSignedIn({ user: { id: 'me', email: 'me@example.test', name: 'Me', role: 'member' }, teams: [], chat: true } as never);
+    await vi.advanceTimersByTimeAsync(5);
+    expect(first.readyState).toBe(1);
+    expect(totalUnread()).toEqual({ unread: 3, mentions: 1 });
   });
 });

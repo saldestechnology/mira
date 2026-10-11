@@ -395,7 +395,7 @@ describe('GET /api/admin/backups/:name/boards', () => {
 describe('the engine status in GET /api/admin/backups', () => {
   const FIELDS = [
     'bytesStored', 'consecutiveFailures', 'deepCovered', 'deepDamaged', 'deepVerifiedAt', 'dirty', 'intervalMinutes', 'keyId', 'lastFailureAt', 'lastFailureError', 'lastSuccessAt', 'lastTrigger',
-    'manifests', 'missingObjects', 'nextRunAt', 'objects', 'running', 'unrepairableObjects', 'verifiedAt', 'wrongSizeObjects',
+    'manifests', 'missingObjects', 'nextRunAt', 'objects', 'running', 'target', 'unrepairableObjects', 'verifiedAt', 'wrongSizeObjects',
   ];
 
   it('holds the sanitised fields of the backup status and nothing else', async () => {
