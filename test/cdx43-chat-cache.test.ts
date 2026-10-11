@@ -147,7 +147,7 @@ function sharedFakeIndexedDB() {
         const state = databases.get(name) ?? { stores: new Map(), connections: new Set<FakeDatabase>() };
         databases.set(name, state);
         req.result = connect(state);
-        if (isNew) req.onupgradeneeded?.(new Event('upgradeneeded'));
+        if (isNew) req.onupgradeneeded?.(Object.assign(new Event('upgradeneeded'), { oldVersion: 0 }));
         req.onsuccess?.(new Event('success'));
       });
       return req as unknown as IDBOpenDBRequest;
@@ -224,13 +224,13 @@ describe('CDX-43 chat cache account isolation', () => {
       createdLocal: 8,
     });
 
-    await Promise.all([tabA.writeChannel(channel), tabA.putOutbox(pending)]);
+    await Promise.all([tabA.writeChannel('u1', channel), tabA.putOutbox('u1', pending)]);
     expect(shared.connectionCount('tabula-chat')).toBe(1);
 
     vi.resetModules();
     const tabB = await import('../src/chat-cache');
-    expect(await tabB.readChannel('board/b1')).toEqual(channel);
-    expect(await tabB.readOutbox()).toEqual([pending]);
+    expect(await tabB.readChannel('u1', 'board/b1')).toEqual(channel);
+    expect(await tabB.readOutbox('u1')).toEqual([pending]);
     expect(shared.connectionCount('tabula-chat')).toBe(2);
 
     await tabB.clearChatCache();
@@ -239,8 +239,8 @@ describe('CDX-43 chat cache account isolation', () => {
     expect(shared.blockedEvents()).toBe(0);
     expect(shared.completedDeletes()).toBe(1);
     expect(shared.connectionCount('tabula-chat')).toBe(0);
-    expect(await tabA.readChannel('board/b1')).toBeUndefined();
-    expect(await tabA.readOutbox()).toEqual([]);
+    expect(await tabA.readChannel('u1', 'board/b1')).toBeUndefined();
+    expect(await tabA.readOutbox('u1')).toEqual([]);
     expect(shared.connectionCount('tabula-chat')).toBe(1);
   });
 });

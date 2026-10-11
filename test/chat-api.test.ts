@@ -88,16 +88,27 @@ describe('chat over the API', { timeout: 60_000 }, () => {
   it('pages backwards with before, 50 by default and 100 at most', async () => {
     const { creator, board } = await setup();
     await list(creator, board); // opens chat.sqlite
+    const seedStartedAt = Date.now();
     const db = new DatabaseSync(path.join(h.dir, 'chat.sqlite'));
     try {
       db.exec('PRAGMA busy_timeout = 5000');
       const insert = db.prepare(`INSERT INTO chat_messages (kind, ref, author_id, author_name, body, client_id, created_at) VALUES ('board', ?, ?, 'x', ?, ?, ?)`);
-      for (let i = 0; i < 130; i++) insert.run(board, creator.user.id, `m${i}`, `seed-${i}-client`, Date.now());
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        for (let i = 0; i < 130; i++) insert.run(board, creator.user.id, `m${i}`, `seed-${i}-client`, Date.now());
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
     } finally {
       db.close();
     }
+    const seedMs = Date.now() - seedStartedAt;
     const texts = (r: any) => r.body.messages.map((m: any) => m.text);
-    const first = await list(creator, board);
+    const first = await list(creator, board).catch((cause) => {
+      throw new Error(`post-seed history request failed after ${seedMs}ms of fixture seeding`, { cause });
+    });
     expect(texts(first)).toEqual(Array.from({ length: 50 }, (_, i) => `m${80 + i}`));
     const second = await list(creator, board, `?before=${first.body.next}`);
     expect(texts(second)).toEqual(Array.from({ length: 50 }, (_, i) => `m${30 + i}`));

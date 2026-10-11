@@ -465,7 +465,7 @@ describe('the seam between the browser and the server', () => {
     expect(await listTemplates()).toEqual([]);
     expect(seen).toEqual([]);
 
-    setSignedIn({ ...me(), user: me().user });
+    await setSignedIn({ ...me(), user: me().user });
     expect(templatesShared()).toBe(true);
     expect((await listTemplates()).map((t) => t.id)).toEqual(['s1']);
     expect((await getTemplate('s1'))?.name).toBe('Template s1');
@@ -481,7 +481,7 @@ describe('the seam between the browser and the server', () => {
 
   it('forgets what the server\'s templates left in the browser, and what the store knew, when the person signs out', async () => {
     vi.stubGlobal('localStorage', storageStub);
-    setSignedIn({ ...me(), user: me().user });
+    await setSignedIn({ ...me(), user: me().user });
     const before = templateStoreFor('signed-in');
     await serverTemplateCache.put('https://tabula.example|t|a', { origin: 'https://tabula.example', value: server('a', 1) });
     expect(await serverTemplateCache.keys()).toEqual(['https://tabula.example|t|a']);
@@ -490,18 +490,18 @@ describe('the seam between the browser and the server', () => {
     expect(templateStoreFor('signed-in')).not.toBe(before);
   });
 
-  it('tells a subscriber when signing in or out moves the templates to the other place', () => {
+  it('tells a subscriber when signing in or out moves the templates to the other place', async () => {
     vi.stubGlobal('localStorage', storageStub);
     const seen = vi.fn<() => void>();
     const off = onTemplatesChange(seen);
-    setSignedIn({ ...me(), user: me().user });
+    await setSignedIn({ ...me(), user: me().user });
     expect(seen).toHaveBeenCalledTimes(1);
-    setSignedIn({ ...me(), user: me().user });
+    await setSignedIn({ ...me(), user: me().user });
     expect(seen).toHaveBeenCalledTimes(1);
     setSignedOut();
     expect(seen).toHaveBeenCalledTimes(2);
     off();
-    setSignedIn({ ...me(), user: me().user });
+    await setSignedIn({ ...me(), user: me().user });
     expect(seen).toHaveBeenCalledTimes(2);
   });
 });

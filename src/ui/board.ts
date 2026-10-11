@@ -883,7 +883,7 @@ function openProfile(app: BoardApp) {
       if (auth.mode === 'signed-in' && typed && typed !== u.name) {
         try {
           const updated = await api.updateMe(typed);
-          setSignedIn({ ...auth.me, user: updated });
+          await setSignedIn({ ...auth.me, user: updated });
           u.name = updated.name;
         } catch (err) {
           toast(err instanceof Error ? err.message : 'Could not save your name.');

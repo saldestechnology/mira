@@ -124,9 +124,9 @@ describe('resyncRooms', () => {
 // The same chain main.ts builds for an open board: sockets -> hint -> one /api/me -> signed-in state -> read-only switch
 // and, when the workspace is writable again, a reconnect of both rooms.
 describe('a board in a hosted workspace', () => {
-  function open(initial: Workspace | undefined) {
-    if (initial) setSignedIn(meWith(initial));
-    else setSignedIn(meWith());
+  async function open(initial: Workspace | undefined) {
+    if (initial) await setSignedIn(meWith(initial));
+    else await setSignedIn(meWith());
     const board = fakeProvider();
     const comments = fakeProvider();
     const conn = { denied: null as DeniedReason | null };
@@ -187,7 +187,7 @@ describe('a board in a hosted workspace', () => {
   }
 
   it('asks /api/me once for the two sockets and switches to read-only without a reconnect', async () => {
-    const b = open(workspace());
+    const b = await open(workspace());
     try {
       b.serverNow(workspace({ readOnly: true }));
       b.push(true);
@@ -205,7 +205,7 @@ describe('a board in a hosted workspace', () => {
   });
 
   it('reconnects both rooms once when the answer says the workspace is writable again', async () => {
-    const b = open(workspace({ readOnly: true }));
+    const b = await open(workspace({ readOnly: true }));
     try {
       b.serverNow(workspace());
       b.push(false);
@@ -229,7 +229,7 @@ describe('a board in a hosted workspace', () => {
   });
 
   it('does not take the hint at its word', async () => {
-    const b = open(workspace({ readOnly: true }));
+    const b = await open(workspace({ readOnly: true }));
     try {
       b.push(false);
       await b.coalesced();
@@ -242,7 +242,7 @@ describe('a board in a hosted workspace', () => {
   });
 
   it('still reconnects when only the five minute refresh sees the unlock', async () => {
-    const b = open(workspace({ readOnly: true }));
+    const b = await open(workspace({ readOnly: true }));
     try {
       b.serverNow(workspace());
       await b.fallback();
@@ -264,7 +264,7 @@ describe('a board in a hosted workspace', () => {
       removeEventListener: () => undefined,
     };
     vi.stubGlobal('document', doc);
-    const b = open(workspace({ readOnly: true }));
+    const b = await open(workspace({ readOnly: true }));
     try {
       b.serverNow(workspace());
       b.push(false);
@@ -287,7 +287,7 @@ describe('a board in a hosted workspace', () => {
   });
 
   it('does not reconnect a board the relay refused', async () => {
-    const b = open(workspace({ readOnly: true }));
+    const b = await open(workspace({ readOnly: true }));
     try {
       b.conn.denied = 'access_removed';
       b.serverNow(workspace());
@@ -302,7 +302,7 @@ describe('a board in a hosted workspace', () => {
   });
 
   it('does not reconnect when the session ends', async () => {
-    const b = open(workspace({ readOnly: true }));
+    const b = await open(workspace({ readOnly: true }));
     try {
       setSignedOut();
       expect(b.board.disconnect).not.toHaveBeenCalled();
@@ -316,7 +316,7 @@ describe('a board in a hosted workspace', () => {
   });
 
   it('is inert without a control plane', async () => {
-    const b = open(undefined);
+    const b = await open(undefined);
     try {
       b.push(true);
       b.push(false);

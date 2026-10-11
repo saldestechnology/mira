@@ -107,7 +107,7 @@ export async function renderVerify(root: HTMLElement, token: string, done: (me: 
     renderSignIn(root, { notice: FAILED });
     return;
   }
-  setSignedIn(me);
+  await setSignedIn(me);
   done(me);
 }
 
@@ -159,7 +159,7 @@ export async function renderInvite(root: HTMLElement, token: string, auth: AuthS
       joinBtn.before(error);
       return;
     }
-    setSignedIn(me);
+    await setSignedIn(me);
     done(me);
   };
   joinBtn.addEventListener('click', join);
