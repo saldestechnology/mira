@@ -178,6 +178,8 @@ describe('tracker slice 4 HTTP routes', () => {
       objs(editor.doc).get('kanban-1')?.set('ext', { provider: 'tabula', tracker: 'forged-tracker', map: {} });
     }, 'test-live-forge-unlinked');
 
+    // the forgery must reach the observer first (the guard waits 200 ms), or the cleanup check below proves nothing
+    await until(() => objs(live.doc).get('card-2')?.get('extKey') === 'FORGED-1', 1000);
     await until(() => {
       const card = objs(live.doc).get('card-2')?.toJSON();
       return !card?.extProvider && !card?.extKey && !card?.trackerId && !card?.tracker
@@ -198,6 +200,7 @@ describe('tracker slice 4 HTTP routes', () => {
       objs(editor.doc).get('kanban-1')?.set('ext', { provider: 'tabula', tracker: 'forged-tracker', map: {} });
     }, 'test-live-forge-linked');
 
+    await until(() => objs(live.doc).get('card-1')?.get('extKey') === 'FORGED-2', 1000);
     await until(() => {
       const card = objs(live.doc).get('card-1')?.toJSON();
       const ext = objs(live.doc).get('kanban-1')?.get('ext');
